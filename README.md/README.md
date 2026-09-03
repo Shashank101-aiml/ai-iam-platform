@@ -271,7 +271,7 @@ erDiagram
 ### Step 1: Clone & Configure Environment
 ```bash
 # Clone the repository
-git clone https://github.com/LordCenk/agent-iam.git
+git clone https://github.com/Shashank101-aiml/ai-iam-platform.git
 cd agent-iam
 
 # Create python virtual environment
