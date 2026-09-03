@@ -1,0 +1,172 @@
+"""
+Agent Authentication Middleware.
+
+Validates agent JWTs on every request:
+1. Extract token from Authorization: Bearer <token>
+2. Quick jti extract (unverified) to check revocation index first
+3. Full RS256 signature verification
+4. Delegation depth check
+5. Bind identity to request state for downstream use
+
+Why check jti BEFORE full verification?
+Full RS256 verification involves crypto operations. If the token is
+already revoked, we can reject it cheaply with a DB/cache lookup
+before doing the expensive crypto. In high-traffic systems this matters.
+
+Note: This middleware handles AGENT tokens only.
+Human operator tokens are handled by the auth dependency in api/auth.py.
+"""
+
+from typing import Optional
+from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from jose import JWTError, ExpiredSignatureError
+from jose.exceptions import JWTClaimsError
+
+from app.core.jwt import verify_agent_token, extract_jti
+from app.core.config import settings
+
+
+# Routes that don't require agent authentication
+EXCLUDED_PATHS = {
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
+    "/api/v1/organizations",  # Org creation (bootstrap)
+}
+
+# Routes that require AGENT auth (not human auth)
+AGENT_AUTH_PREFIX = "/api/v1/agents/"
+
+
+class AgentAuthMiddleware(BaseHTTPMiddleware):
+    """
+    Request-level middleware that validates agent JWTs.
+    Sets request.state.agent_identity on success.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip non-agent routes
+        if request.url.path in EXCLUDED_PATHS:
+            return await call_next(request)
+
+        # Only enforce on agent-facing API paths
+        if not self._requires_agent_auth(request.url.path):
+            return await call_next(request)
+
+        token = self._extract_bearer_token(request)
+        if not token:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"error": "missing_token", "detail": "Authorization header required"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        try:
+            identity = await self._validate_token(token, request)
+        except HTTPException as e:
+            return JSONResponse(
+                status_code=e.status_code,
+                content=e.detail,
+            )
+
+        # Bind to request state — accessible in route handlers via request.state.agent
+        request.state.agent = identity
+        return await call_next(request)
+
+    async def _validate_token(self, token: str, request: Request) -> dict:
+        """Full token validation pipeline."""
+
+        # Step 1: Quick jti extract (no crypto yet)
+        jti = extract_jti(token)
+        if not jti:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "invalid_token", "detail": "Token missing jti claim"}
+            )
+
+        # Step 2: JTI revocation check
+        # In production this hits Redis. Here we skip if no cache available.
+        # Implementors: add redis_client.get(f"revoked_jti:{jti}") check here
+        is_revoked = await self._check_jti_revoked(jti)
+        if is_revoked:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "token_revoked", "detail": "Token has been revoked"}
+            )
+
+        # Step 3: Full RS256 verification + claims validation
+        try:
+            payload = verify_agent_token(token)
+        except ExpiredSignatureError:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "token_expired", "detail": "Agent token has expired"}
+            )
+        except JWTClaimsError as e:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "invalid_claims", "detail": str(e)}
+            )
+        except JWTError as e:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "invalid_token", "detail": "Token verification failed"}
+            )
+
+        # Step 4: Delegation depth enforcement
+        depth = payload.get("delegation_depth", 0)
+        if depth > settings.MAX_DELEGATION_DEPTH:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "delegation_depth_exceeded",
+                    "depth": depth,
+                    "max": settings.MAX_DELEGATION_DEPTH,
+                }
+            )
+
+        return {
+            "agent_id": payload["agent_id"],
+            "org_id": payload["org_id"],
+            "scopes": payload.get("scopes", []),
+            "jti": jti,
+            "causal_trace_id": payload.get("causal_trace_id"),
+            "delegation_depth": depth,
+            "parent_agent_id": payload.get("parent_agent_id"),
+            "token_type": payload.get("token_type", "access"),
+        }
+
+    async def _check_jti_revoked(self, jti: str) -> bool:
+        """
+        Check if a JTI has been revoked.
+
+        Production: check Redis SET "revoked_jtis"
+        Development: always returns False (no revocation store)
+        """
+        # TODO: integrate Redis
+        # return await redis_client.sismember("revoked_jtis", jti)
+        return False
+
+    def _extract_bearer_token(self, request: Request) -> Optional[str]:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:]
+        return None
+
+    def _requires_agent_auth(self, path: str) -> bool:
+        """
+        Determine if a path requires agent auth vs human auth.
+        Agent-facing paths include the MCP proxy and tool execution endpoints.
+        """
+        agent_paths = [
+            "/api/v1/agents/",
+            "/api/v1/mcp/",
+            "/api/v1/token",
+            "/api/v1/delegate",
+        ]
+        return any(path.startswith(p) for p in agent_paths)

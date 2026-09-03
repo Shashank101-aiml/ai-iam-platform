@@ -1,0 +1,33 @@
+# Build context is the repo root (see docker-compose.yml's `context: ..`).
+# Without this, `COPY backend /app/backend` in docker/Dockerfile bakes
+# whatever happens to be sitting in a developer's local backend/ into the
+# image layer — including generated secrets. .gitignore does not apply
+# to Docker's build context; only .dockerignore does.
+
+.git/
+.gitignore
+
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.venv-test/
+
+# Secrets — never baked into an image. Runtime keys are mounted/injected,
+# not COPY'd; see docs/testing.md and the Slice 11 secrets-handling notes.
+backend/.env
+backend/.env.*
+backend/keys/
+**/*.pem
+
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

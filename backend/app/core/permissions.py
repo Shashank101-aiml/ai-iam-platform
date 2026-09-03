@@ -1,0 +1,147 @@
+"""
+Relationship-based Access Control (ReBAC) via Open Policy Agent (OPA).
+
+Why ReBAC over RBAC:
+- RBAC: "Agent has role Admin" → can do everything Admin can
+- ReBAC: "Agent A has 'editor' relationship to Resource B" → only that resource
+- In multi-agent systems, agents often need scoped access to specific resources
+  (e.g., Agent A can read Audit Logs of Org X but not Org Y)
+
+OPA evaluates Rego policies we define — this keeps policy logic OUT of app code
+and in version-controlled .rego files. Security teams can audit policies without
+reading Python.
+"""
+
+import httpx
+from typing import Optional
+from fastapi import HTTPException, status
+
+from app.core.config import settings
+
+
+class PermissionDeniedError(Exception):
+    """Raised when OPA denies an access request."""
+    def __init__(self, agent_id: str, action: str, resource: str):
+        self.agent_id = agent_id
+        self.action = action
+        self.resource = resource
+        super().__init__(
+            f"Agent '{agent_id}' denied '{action}' on '{resource}'"
+        )
+
+
+async def check_permission(
+    agent_id: str,
+    org_id: str,
+    action: str,
+    resource_type: str,
+    resource_id: Optional[str] = None,
+    token_scopes: list[str] = [],
+    delegation_depth: int = 0,
+) -> bool:
+    """
+    Evaluate an access decision via OPA.
+
+    OPA receives the full context and evaluates against Rego policies.
+    Returns True if allowed, raises PermissionDeniedError if denied.
+
+    Input document sent to OPA:
+    {
+        "input": {
+            "agent_id": "...",
+            "org_id": "...",
+            "action": "tool:execute",
+            "resource": { "type": "mcp_tool", "id": "search_web" },
+            "token_scopes": ["tool:execute", "audit:read"],
+            "delegation_depth": 1
+        }
+    }
+    """
+    opa_input = {
+        "input": {
+            "agent_id": agent_id,
+            "org_id": org_id,
+            "action": action,
+            "resource": {
+                "type": resource_type,
+                **({"id": resource_id} if resource_id else {}),
+            },
+            "token_scopes": token_scopes,
+            "delegation_depth": delegation_depth,
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.post(
+                f"{settings.OPA_URL}/{settings.OPA_POLICY_PATH}",
+                json=opa_input,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+    except httpx.TimeoutException:
+        # Fail CLOSED on OPA timeout — never default to allow
+        raise PermissionDeniedError(
+            agent_id, action, resource_id or resource_type
+        )
+    except httpx.HTTPError as e:
+        raise PermissionDeniedError(
+            agent_id, action, resource_id or resource_type
+        )
+
+    # OPA returns {"result": {"allow": true/false}}
+    allowed = result.get("result", {}).get("allow", False)
+
+    if not allowed:
+        raise PermissionDeniedError(agent_id, action, resource_id or resource_type)
+
+    return True
+
+
+async def require_permission(
+    agent_id: str,
+    org_id: str,
+    action: str,
+    resource_type: str,
+    resource_id: Optional[str] = None,
+    token_scopes: list[str] = [],
+    delegation_depth: int = 0,
+) -> None:
+    """
+    Decorator-friendly wrapper. Raises HTTP 403 on denial.
+    Use this in FastAPI route handlers.
+    """
+    try:
+        await check_permission(
+            agent_id, org_id, action, resource_type,
+            resource_id, token_scopes, delegation_depth
+        )
+    except PermissionDeniedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "permission_denied",
+                "agent_id": e.agent_id,
+                "action": e.action,
+                "resource": e.resource,
+            }
+        )
+
+
+def validate_scope_subset(
+    requested_scopes: list[str],
+    delegating_agent_scopes: list[str],
+) -> list[str]:
+    """
+    Ensure a delegation can ONLY grant scopes the delegating agent already has.
+
+    Prevents privilege escalation: an agent with [read] cannot delegate [write].
+    Returns the valid intersection.
+    """
+    valid = list(set(requested_scopes) & set(delegating_agent_scopes))
+    if len(valid) != len(requested_scopes):
+        invalid = set(requested_scopes) - set(delegating_agent_scopes)
+        raise ValueError(
+            f"Cannot delegate scopes not held by delegating agent: {invalid}"
+        )
+    return valid
