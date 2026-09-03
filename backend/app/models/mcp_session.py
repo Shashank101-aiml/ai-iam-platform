@@ -13,7 +13,7 @@ entry for this same action, so you get a full picture:
   JWT (who) → audit_log (what decision) → mcp_session (what happened)
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -49,6 +49,15 @@ class McpSession(Base, TimestampMixin):
     # Causal linkage
     causal_trace_id = Column(String, nullable=False, index=True)
     audit_log_id = Column(String, ForeignKey("audit_logs.id"), nullable=True)
+
+    __table_args__ = (
+        # Every org-scoped listing query (mcp_session_repo.get_by_agent,
+        # api/mcp_proxy.py's list_mcp_sessions) filters on org_id and
+        # orders by created_at — a plain ascending composite index lets
+        # Postgres satisfy the DESC order with a backward index scan
+        # instead of a sort.
+        Index("ix_mcp_sessions_org_id_created_at", "org_id", "created_at"),
+    )
 
     def __repr__(self):
         return (

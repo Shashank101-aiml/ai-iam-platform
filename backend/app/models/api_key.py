@@ -9,7 +9,7 @@ Security design:
 - previous_hash: the old hash kept for 1 TTL window during zero-downtime rotation
 """
 
-from sqlalchemy import Column, String, Boolean, ForeignKey, DateTime, Integer, ARRAY
+from sqlalchemy import Column, String, Boolean, ForeignKey, DateTime, Integer, ARRAY, Index
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, generate_uuid
 from app.core.constants import CredentialType
@@ -55,6 +55,13 @@ class ApiKey(Base, TimestampMixin):
     # Relationships
     agent = relationship("Agent", back_populates="api_keys")
     rotated_from = relationship("ApiKey", remote_side=[id], foreign_keys=[rotated_from_id])
+
+    __table_args__ = (
+        # api_key_service._verify_by_full_scan filters on exactly this pair
+        # on every authenticated request — org_id and is_active each have
+        # their own single-column index, but the query needs both together.
+        Index("ix_api_keys_org_id_is_active", "org_id", "is_active"),
+    )
 
     def __repr__(self):
         return f"<ApiKey key_id={self.key_id} agent_id={self.agent_id} active={self.is_active}>"

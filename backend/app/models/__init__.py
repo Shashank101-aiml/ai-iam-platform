@@ -7,6 +7,7 @@ from app.models.api_key import ApiKey
 from app.models.audit_log import AuditLog
 from app.models.delegation_grant import DelegationGrant
 from app.models.mcp_session import McpSession
+from app.models.permission import Permission
 from app.models.role import Role, agent_roles
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "AuditLog",
     "DelegationGrant",
     "McpSession",
+    "Permission",
     "Role",
     "agent_roles",
 ]

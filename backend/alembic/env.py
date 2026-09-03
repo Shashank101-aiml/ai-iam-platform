@@ -3,6 +3,7 @@ Alembic Environment script for async SQLAlchemy migrations.
 """
 
 import asyncio
+import os
 from logging.config import fileConfig
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -18,8 +19,15 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# Set database URL dynamically from app config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Prefer an explicit DATABASE_URL environment variable when set — this is
+# the standard Alembic pattern for pointing migrations at a different
+# database than the app's own .env (a schema-drift check DB, CI, a
+# specific environment) without touching app.core.config. Falls back to
+# the app's own configured DATABASE_URL for normal `alembic upgrade head`
+# runs against the dev database.
+config.set_main_option(
+    "sqlalchemy.url", os.environ.get("DATABASE_URL", settings.DATABASE_URL)
+)
 
 
 def run_migrations_offline() -> None:
