@@ -16,6 +16,7 @@ import uuid
 import pytest_asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import NullPool
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
@@ -34,7 +35,15 @@ TEST_DATABASE_URL = os.environ.get(
     "postgresql+asyncpg://aiiam_user:supersecretpassword@localhost:5432/aiiam_test_db",
 )
 
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+# NullPool: every checkout is a genuinely fresh asyncpg connection, never
+# reused from a pool. Each test's db_session fixture does create_all at
+# setup and drop_all at teardown against this same module-level engine —
+# with a reused connection pool, a connection left in an unexpected state
+# by one test (an uncommitted transaction, a cursor mid-flight) can
+# surface as an unrelated failure in a completely different test's
+# fixture setup ("another operation is in progress"). alembic/env.py
+# already uses NullPool for the same reason.
+test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 TestingSessionLocal = async_sessionmaker(
     bind=test_engine, class_=AsyncSession, expire_on_commit=False
 )

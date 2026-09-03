@@ -96,7 +96,7 @@ export const apiService = {
 
   async issueApiKey(agentId, scopes = ['tool:execute'], ttlDays = 90) {
     try {
-      const res = await fetch(`${BASE_URL}/keys/${agentId}`, {
+      const res = await fetch(`${BASE_URL}/agents/${agentId}/keys`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ scopes, ttl_days: ttlDays }),

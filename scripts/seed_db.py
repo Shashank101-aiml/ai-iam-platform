@@ -1,16 +1,20 @@
 """
-Database Seed Script for AI-IAM Platform.
-Populates an initial production-ready dataset including:
+Database Seed Script for AI-IAM Platform — LOCAL DEVELOPMENT / DEMO ONLY.
+Populates a sample dataset including:
 - Default Organization ('Acme Corp AI')
 - Superuser Operator account ('admin@acmecorp.ai')
 - ReBAC Permissions & Roles ('Super Admin', 'Security Monitor', 'Data Worker')
 - Multi-Tier Agent Hierarchy ('Core Supervisor Agent' -> 'Analytics Sub-Agent')
+
+For a real deployment, use scripts/bootstrap.py instead — it creates only
+the org + superuser (no fake agents/roles), doesn't call init_db()/
+create_all (assumes `alembic upgrade head` already ran), and lets you
+choose your own admin email and password rather than the hardcoded demo
+credentials below.
 """
 
 import asyncio
 import uuid
-import bcrypt
-from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -23,6 +27,7 @@ from app.models.role import Role
 from app.models.agent import Agent
 from app.core.constants import AgentStatus
 from app.repositories.role_repo import role_repo
+from bootstrap import bootstrap_organization
 
 
 async def seed() -> None:
@@ -36,30 +41,15 @@ async def seed() -> None:
             print("Database already seeded (`acmecorp-ai` found). Exiting seed script.")
             return
 
-        print("Creating default organization: Acme Corp AI...")
-        org = Organization(
-            id=str(uuid.uuid4()),
-            name="Acme Corp AI",
-            slug="acmecorp-ai",
-            is_active=True,
-            metadata_="Primary corporate AI organization boundary",
-        )
-        db.add(org)
-        await db.flush()
-
-        print("Creating superuser operator account...")
-        salt = bcrypt.gensalt()
-        hashed = bcrypt.hashpw(b"AdminPass123!", salt).decode()
-        admin_user = User(
-            id=str(uuid.uuid4()),
-            org_id=org.id,
-            email="admin@acmecorp.ai",
-            hashed_password=hashed,
-            is_active=True,
+        print("Creating default organization and superuser operator account...")
+        org, admin_user = await bootstrap_organization(
+            db,
+            org_name="Acme Corp AI",
+            org_slug="acmecorp-ai",
+            admin_email="admin@acmecorp.ai",
+            admin_password="AdminPass123!",
             is_superuser=True,
         )
-        db.add(admin_user)
-        await db.flush()
 
         print("Creating core ReBAC permissions & roles...")
         scopes = [

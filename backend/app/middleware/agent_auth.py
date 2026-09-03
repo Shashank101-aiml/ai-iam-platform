@@ -161,12 +161,20 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
     def _requires_agent_auth(self, path: str) -> bool:
         """
         Determine if a path requires agent auth vs human auth.
-        Agent-facing paths include the MCP proxy and tool execution endpoints.
+
+        Only the two routes actually declared with
+        Depends(get_current_agent_state) belong here — everything else
+        under /api/v1/agents/, /api/v1/mcp/, and /api/v1/token is
+        operator-facing (Depends(get_current_user)) or intentionally
+        open (token exchange, which is how an agent gets its first JWT
+        at all). A broader prefix match here — "/api/v1/agents/" in
+        particular — silently 401s every real operator request to
+        agent lifecycle routes (activate/suspend/decommission/get/keys)
+        before get_current_user ever runs, since this middleware sits
+        in front of it and demands an agent RS256 JWT instead.
         """
         agent_paths = [
-            "/api/v1/agents/",
-            "/api/v1/mcp/",
-            "/api/v1/token",
-            "/api/v1/delegate",
+            "/api/v1/mcp/tools/",
+            "/api/v1/token/delegate",
         ]
         return any(path.startswith(p) for p in agent_paths)

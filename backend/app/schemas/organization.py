@@ -23,10 +23,29 @@ class OrganizationUpdate(BaseModel):
     metadata_: Optional[str] = Field(None, alias="metadata")
 
 
-class OrganizationResponse(OrganizationBase):
+class OrganizationResponse(BaseModel):
+    """
+    Deliberately not a subclass of OrganizationBase: that base's
+    metadata_ field aliases to "metadata" for JSON input/output, which
+    is correct for request bodies (plain dicts) but wrong here. Every
+    SQLAlchemy declarative model has a class-level `.metadata` attribute
+    (its schema registry) — when Pydantic builds this response
+    from_attributes=True off an Organization ORM instance, an alias of
+    "metadata" makes it read that registry object instead of the actual
+    metadata_ column value, and fail validation
+    ('Input should be a valid string', got a MetaData object).
+    validation_alias="metadata_" reads the real column; the JSON key
+    stays "metadata" via serialization_alias for API consistency with
+    OrganizationCreate/OrganizationUpdate's input shape.
+    """
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: str
+    name: str
+    slug: str
+    metadata_: Optional[str] = Field(
+        None, validation_alias="metadata_", serialization_alias="metadata"
+    )
     is_active: bool
     created_at: datetime
     updated_at: datetime

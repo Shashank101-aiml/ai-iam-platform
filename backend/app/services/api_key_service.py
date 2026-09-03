@@ -126,11 +126,13 @@ class ApiKeyService:
         )
 
         return {
+            "id": api_key.id,
             "plaintext_key": plaintext_key,   # Show once, never again
             "key_id": key_id,
             "key_hint": f"...{key_hint}",
             "scopes": scopes,
             "expires_at": api_key.expires_at,
+            "created_at": api_key.created_at,
         }
 
     async def verify_key(
