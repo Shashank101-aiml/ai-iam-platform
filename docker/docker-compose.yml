@@ -72,6 +72,15 @@ services:
       SPIFFE_TRUST_DOMAIN: "ai-iam.internal"
       BCRYPT_ROUNDS: "12"
       MAX_DELEGATION_DEPTH: "5"
+    volumes:
+      # RS256 keypair, mounted in — never baked into the image (see
+      # .dockerignore: backend/keys/ is deliberately excluded from the
+      # build context so a private key never ends up in an image
+      # layer). Generate with scripts/generate_keys.sh before first run.
+      # A real deployment's secret management (Vault, cloud KMS, an
+      # orchestrator's native secrets) is a separate, later concern —
+      # this is the local-dev equivalent.
+      - ../backend/keys:/app/backend/keys:ro
     ports:
       - "8000:8000"
     command: >

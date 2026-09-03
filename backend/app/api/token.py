@@ -25,20 +25,33 @@ async def exchange_token(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange an API key or SPIFFE token for a short-lived signed RS256 JWT."""
+    """
+    Exchange an API key or SPIFFE token for a short-lived signed RS256 JWT.
+
+    The credential must be in compound form ("kid_xxxxxxxx:aiiam_<hex>",
+    the key_id from issuance followed by the plaintext secret) — this
+    endpoint has no org_id to scope a lookup by, so it relies entirely
+    on api_key_service.verify_key's O(1) key_id path. A bare
+    "aiiam_..." key with no key_id prefix is rejected the same way an
+    invalid key is: verify_key won't attempt an unscoped scan across
+    every organization's keys.
+    """
     if token_in.grant_type == "api_key":
         trace_id = token_in.causal_trace_id or "exchange:api_key"
         key_info = await api_key_service.verify_key(
             db,
             plaintext_key=token_in.credential,
-            org_id="lookup_from_key",  # verify_key will check across orgs if key format allows or match
             causal_trace_id=trace_id,
             source_ip=request.client.host if request.client else None,
         )
         if not key_info:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired API key",
+                detail=(
+                    "Invalid or expired API key. The credential must be in "
+                    "the form 'kid_xxxxxxxx:aiiam_...' — both values are "
+                    "returned together when the key is issued."
+                ),
             )
         await db.commit()
 
@@ -60,7 +73,7 @@ async def exchange_token(
         return {
             "access_token": token_dict["token"],
             "token_type": "bearer",
-            "expires_in": token_dict["exp"] - int(token_dict["token"].split(".")[1] and 0 or 0), # approx 900s
+            "expires_in": token_dict["expires_in"],
             "jti": token_dict["jti"],
             "scopes": key_info["scopes"],
             "causal_trace_id": trace_id,

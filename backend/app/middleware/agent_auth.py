@@ -39,9 +39,6 @@ EXCLUDED_PATHS = {
     "/api/v1/organizations",  # Org creation (bootstrap)
 }
 
-# Routes that require AGENT auth (not human auth)
-AGENT_AUTH_PREFIX = "/api/v1/agents/"
-
 
 class AgentAuthMiddleware(BaseHTTPMiddleware):
     """

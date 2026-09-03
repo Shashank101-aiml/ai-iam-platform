@@ -71,7 +71,11 @@ def create_agent_access_token(
     }
 
     token = jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)
-    return {"token": token, "jti": jti, "exp": exp}
+    # expires_in computed from the same now/exp used in the token itself,
+    # not re-derived by the caller from a second time.time() call — that
+    # would drift by however long encoding took, and drift is exactly
+    # what expires_in exists to be trustworthy about.
+    return {"token": token, "jti": jti, "exp": exp, "expires_in": exp - now}
 
 
 def create_delegation_token(
@@ -162,3 +166,40 @@ def extract_jti(token: str) -> Optional[str]:
         return unverified.get("jti")
     except Exception:
         return None
+
+
+def verify_rs256_keypair_loadable() -> None:
+    """
+    Fail fast at startup if the RS256 keypair is missing, unreadable, or
+    mismatched — rather than booting successfully and only discovering
+    it the first time an agent tries to get or verify a token.
+
+    JWT_SECRET_KEY (the operator HS256 secret) already has no default in
+    Settings, so pydantic-settings refuses to construct the app at all
+    without it — that's a load-bearing guarantee this function doesn't
+    need to re-implement. The RS256 *files*, unlike JWT_SECRET_KEY, are
+    loaded lazily by _load_private_key()/_load_public_key() on first
+    use, so a missing/corrupt/mismatched keypair wouldn't surface until
+    the first real token operation without this check. Signs and
+    verifies one throwaway token as a round-trip proof the two files are
+    both present and are actually a matching pair, not just files that
+    happen to exist.
+
+    Raises on any failure — callers should let that abort startup.
+    """
+    now = int(time.time())
+    probe_payload = {
+        "iss": f"https://{settings.SPIFFE_TRUST_DOMAIN}",
+        "sub": "agent:startup-keypair-check",
+        "aud": "ai-iam-platform",
+        "iat": now,
+        "exp": now + 60,
+    }
+    token = jwt.encode(probe_payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)
+    jwt.decode(
+        token,
+        _load_public_key(),
+        algorithms=[settings.JWT_ALGORITHM],
+        audience="ai-iam-platform",
+        issuer=f"https://{settings.SPIFFE_TRUST_DOMAIN}",
+    )

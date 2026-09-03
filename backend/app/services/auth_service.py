@@ -62,9 +62,17 @@ class AuthService:
 
     def create_access_token(self, user_id: str, org_id: str) -> str:
         """
-        Issue a short-lived JWT for dashboard operators.
-        Different from agent tokens — uses HS256 for simplicity,
-        longer TTL since humans have MFA.
+        Issue a JWT for dashboard operators. Different from agent tokens:
+        symmetric HS256 (a single shared JWT_SECRET_KEY, simpler than
+        managing an RSA keypair for a token only this service issues and
+        verifies) and an 8-hour, workday-length TTL rather than agent
+        tokens' 15 minutes.
+
+        That TTL is not backed by MFA or any other mitigating control —
+        no MFA exists anywhere in this codebase. It's a plain trade-off
+        of session convenience against exposure window if a token leaks,
+        made here explicitly rather than justified by a control that
+        isn't actually there.
         """
         exp = datetime.now(timezone.utc) + timedelta(hours=8)
         payload = {

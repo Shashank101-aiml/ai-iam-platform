@@ -18,8 +18,11 @@ Verification flow (every API request):
 
 import uuid
 import hashlib
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
@@ -140,15 +143,29 @@ class ApiKeyService:
         db: AsyncSession,
         *,
         plaintext_key: str,
-        org_id: str,
         causal_trace_id: str,
+        org_id: Optional[str] = None,
         source_ip: Optional[str] = None,
     ) -> Optional[dict]:
         """
         Verify an API key and return its identity context if valid.
 
-        Called by middleware on every authenticated request.
-        Fast path: key prefix check before any DB queries.
+        Two lookup paths:
+
+        1. Compound format "kid_xxxxxxxx:aiiam_<hex>" (preferred — this
+           is what /api/v1/token/exchange requires). key_id is unique
+           and indexed, so this is a single row lookup plus one bcrypt
+           check, and org_id isn't needed at all: the row carries its
+           own org_id.
+        2. A bare "aiiam_..." key plus an org_id the caller already
+           has in hand (deprecated). Scans every active key in that
+           org, bcrypt-checking each one — O(n) in the org's active key
+           count, and every wrong guess still costs a full bcrypt
+           verify against every key in the org, which is a real CPU
+           exhaustion vector at any real key volume. Kept only for
+           internal callers that already know the org (this is what
+           tests/test_credential_rotation.py exercises); every use logs
+           a warning.
 
         Returns:
             {
@@ -158,22 +175,68 @@ class ApiKeyService:
                 "key_id": str,
                 "using_grace_key": bool,  # True if using the old key during rotation
             }
-        Returns None if the key is invalid.
+        Returns None if the key is invalid, or if it's a bare key with
+        no org_id to scope a scan against.
         """
-        # Fast path: reject malformed keys immediately
+        key_id, secret = self._split_compound_key(plaintext_key)
+        if key_id is not None:
+            return await self._verify_by_key_id(
+                db, key_id, secret, causal_trace_id, source_ip
+            )
+
         if not plaintext_key.startswith(settings.API_KEY_PREFIX):
             return None
 
-        # We can't look up by hash (bcrypt is one-way), so we fetch
-        # active keys for the org and check each one. In practice,
-        # each agent has at most 2 active keys (old + new during rotation).
-        # We need the agent_id, but we don't have it yet...
-        # Solution: embed a key_id in the Authorization header format:
-        # "Bearer kid_a3f9c2:aiiam_xyz789..."
-        # This lets us look up by key_id first, then verify the hash.
-        # If not using the compound format, fall back to org-wide scan (slow path).
+        if org_id is None:
+            logger.warning(
+                "verify_key: bare API key presented with no org_id and no "
+                "kid_ prefix — refusing rather than scanning every org."
+            )
+            return None
+
+        logger.warning(
+            "verify_key: falling back to a full org-wide key scan (org_id=%s). "
+            "This is O(n) in the org's active key count and deprecated — "
+            "prefix the credential with its key_id (\"kid_xxx:aiiam_...\") "
+            "to use the O(1) lookup instead.",
+            org_id,
+        )
         return await self._verify_by_full_scan(
             db, plaintext_key, org_id, causal_trace_id, source_ip
+        )
+
+    @staticmethod
+    def _split_compound_key(plaintext_key: str) -> tuple[Optional[str], str]:
+        """
+        Splits "kid_xxxxxxxx:aiiam_<hex>" into (key_id, secret).
+        Returns (None, plaintext_key) if it isn't in that format —
+        callers fall back to the full-scan path in that case.
+        """
+        if ":" not in plaintext_key:
+            return None, plaintext_key
+        key_id, _, secret = plaintext_key.partition(":")
+        if not key_id.startswith("kid_") or not secret.startswith(settings.API_KEY_PREFIX):
+            return None, plaintext_key
+        return key_id, secret
+
+    async def _verify_by_key_id(
+        self,
+        db: AsyncSession,
+        key_id: str,
+        plaintext_key: str,
+        causal_trace_id: str,
+        source_ip: Optional[str],
+    ) -> Optional[dict]:
+        """O(1) path: one indexed lookup, then verify against that row only."""
+        key = await api_key_repo.get_by_key_id(db, key_id)
+        if not key or not key.is_active:
+            # No org to attribute this to — an unknown/inactive key_id
+            # doesn't tell us which tenant's audit chain it belongs on.
+            logger.warning("verify_key: unknown or inactive key_id presented: %s", key_id)
+            return None
+
+        return await self._match_and_record(
+            db, key, plaintext_key, causal_trace_id, source_ip
         )
 
     async def _verify_by_full_scan(
@@ -184,9 +247,7 @@ class ApiKeyService:
         causal_trace_id: str,
         source_ip: Optional[str],
     ) -> Optional[dict]:
-        """
-        Verify by scanning active keys. Slowest path — use key_id prefix in prod.
-        """
+        """Deprecated: verify by scanning every active key in an org."""
         from sqlalchemy import select, and_
         from app.models.api_key import ApiKey as ApiKeyModel
 
@@ -201,62 +262,13 @@ class ApiKeyService:
         keys = result.scalars().all()
 
         for key in keys:
-            if is_key_expired(key.expires_at):
-                continue
+            matched = await self._match_and_record(
+                db, key, plaintext_key, causal_trace_id, source_ip, record_denial_on_miss=False
+            )
+            if matched:
+                return matched
 
-            # Check primary hash
-            if verify_api_key(plaintext_key, key.hashed_secret):
-                await api_key_repo.record_usage(db, key.key_id)
-                await audit_repo.append(
-                    db,
-                    org_id=org_id,
-                    action=AuditAction.CREDENTIAL_USED,
-                    actor_type="agent",
-                    actor_id=key.agent_id,
-                    agent_id=key.agent_id,
-                    causal_trace_id=causal_trace_id,
-                    outcome="success",
-                    details={"key_id": key.key_id, "grace_key": False},
-                    source_ip=source_ip,
-                )
-                return {
-                    "agent_id": key.agent_id,
-                    "org_id": key.org_id,
-                    "scopes": key.scopes,
-                    "key_id": key.key_id,
-                    "using_grace_key": False,
-                }
-
-            # Check grace hash (old key during rotation window)
-            if (
-                key.previous_hashed_secret
-                and key.previous_key_expires_at
-                and not is_key_expired(key.previous_key_expires_at)
-                and verify_api_key(plaintext_key, key.previous_hashed_secret)
-            ):
-                await api_key_repo.record_usage(db, key.key_id)
-                await audit_repo.append(
-                    db,
-                    org_id=org_id,
-                    action=AuditAction.CREDENTIAL_USED,
-                    actor_type="agent",
-                    actor_id=key.agent_id,
-                    agent_id=key.agent_id,
-                    causal_trace_id=causal_trace_id,
-                    outcome="success",
-                    details={"key_id": key.key_id, "grace_key": True,
-                             "warning": "client_using_rotated_key"},
-                    source_ip=source_ip,
-                )
-                return {
-                    "agent_id": key.agent_id,
-                    "org_id": key.org_id,
-                    "scopes": key.scopes,
-                    "key_id": key.key_id,
-                    "using_grace_key": True,
-                }
-
-        # No match — log denied access
+        # No match anywhere in the org — log denied access
         await audit_repo.append(
             db,
             org_id=org_id,
@@ -269,6 +281,75 @@ class ApiKeyService:
             source_ip=source_ip,
         )
         return None
+
+    async def _match_and_record(
+        self,
+        db: AsyncSession,
+        key: ApiKey,
+        plaintext_key: str,
+        causal_trace_id: str,
+        source_ip: Optional[str],
+        record_denial_on_miss: bool = True,
+    ) -> Optional[dict]:
+        """
+        Checks plaintext_key against one ApiKey row's primary hash, then
+        its grace-period hash. On a match, records usage and an audit
+        entry and returns the identity dict verify_key promises. On a
+        miss, optionally audits ACCESS_DENIED against that row's own
+        org (record_denial_on_miss=False when the caller — the
+        full-scan path — will do this once for the whole org instead of
+        once per row it happened to check).
+        """
+        if is_key_expired(key.expires_at):
+            return None
+
+        if verify_api_key(plaintext_key, key.hashed_secret):
+            grace_key = False
+        elif (
+            key.previous_hashed_secret
+            and key.previous_key_expires_at
+            and not is_key_expired(key.previous_key_expires_at)
+            and verify_api_key(plaintext_key, key.previous_hashed_secret)
+        ):
+            grace_key = True
+        else:
+            if record_denial_on_miss:
+                await audit_repo.append(
+                    db,
+                    org_id=key.org_id,
+                    action=AuditAction.ACCESS_DENIED,
+                    actor_type="unknown",
+                    actor_id="unknown",
+                    causal_trace_id=causal_trace_id,
+                    outcome="failure",
+                    details={"reason": "invalid_api_key", "key_id": key.key_id},
+                    source_ip=source_ip,
+                )
+            return None
+
+        await api_key_repo.record_usage(db, key.key_id)
+        details = {"key_id": key.key_id, "grace_key": grace_key}
+        if grace_key:
+            details["warning"] = "client_using_rotated_key"
+        await audit_repo.append(
+            db,
+            org_id=key.org_id,
+            action=AuditAction.CREDENTIAL_USED,
+            actor_type="agent",
+            actor_id=key.agent_id,
+            agent_id=key.agent_id,
+            causal_trace_id=causal_trace_id,
+            outcome="success",
+            details=details,
+            source_ip=source_ip,
+        )
+        return {
+            "agent_id": key.agent_id,
+            "org_id": key.org_id,
+            "scopes": key.scopes,
+            "key_id": key.key_id,
+            "using_grace_key": grace_key,
+        }
 
     async def rotate_key(
         self,

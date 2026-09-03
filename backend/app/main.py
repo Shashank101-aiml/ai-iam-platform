@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.jwt import verify_rs256_keypair_loadable
 from app.middleware.agent_auth import AgentAuthMiddleware
 from app.middleware.trace_propagation import TracePropagationMiddleware
 from app.db.session import engine
@@ -42,6 +43,17 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection verified")
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
+        raise
+
+    # Verify the RS256 keypair agent tokens are signed/verified with is
+    # present and actually matched — not lazily, on the first agent's
+    # first request. JWT_SECRET_KEY (operator HS256) has no default in
+    # Settings, so it already blocks startup on its own if missing.
+    try:
+        verify_rs256_keypair_loadable()
+        logger.info("RS256 agent token keypair verified")
+    except Exception as e:
+        logger.error(f"RS256 keypair invalid or unreadable: {e}")
         raise
 
     # Start background workers
