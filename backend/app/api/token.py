@@ -96,6 +96,10 @@ async def create_delegation_grant(
     """
     Issue a multi-hop delegation grant and token.
     Enforces scope attenuation: requested_scopes must be a subset of the delegating agent's scopes.
+    Scopes and the delegation lineage both come from current_agent — the
+    verified JWT payload AgentAuthMiddleware attached to this request —
+    never from the request body. del_in only supplies what's being
+    requested, not what the requester is trusted to hold.
     """
     grant_result = await delegation_service.delegate(
         db,
@@ -103,8 +107,9 @@ async def create_delegation_grant(
         delegatee_agent_id=del_in.delegatee_agent_id,
         org_id=current_agent["org_id"],
         requested_scopes=del_in.requested_scopes,
-        parent_trace_id=del_in.causal_trace_id or current_agent.get("causal_trace_id", "delegate"),
-        current_depth=current_agent.get("delegation_depth", 0),
+        delegating_agent_verified_scopes=current_agent.get("scopes", []),
+        delegating_agent_jti=current_agent.get("jti"),
+        parent_trace_id=del_in.causal_trace_id or current_agent.get("causal_trace_id"),
         ttl_seconds=del_in.ttl_seconds,
     )
     await db.commit()

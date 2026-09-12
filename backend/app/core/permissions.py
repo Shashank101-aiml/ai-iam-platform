@@ -20,14 +20,27 @@ from app.core.config import settings
 
 
 class PermissionDeniedError(Exception):
-    """Raised when OPA denies an access request."""
-    def __init__(self, agent_id: str, action: str, resource: str):
+    """
+    Raised when OPA denies an access request.
+
+    action/resource are optional so this can also be raised with a bare
+    message (as tests do, and as ad-hoc denials elsewhere might) without
+    fabricating placeholder agent/action/resource values just to satisfy
+    a three-argument constructor.
+    """
+    def __init__(self, agent_id: str, action: Optional[str] = None, resource: Optional[str] = None):
         self.agent_id = agent_id
         self.action = action
         self.resource = resource
-        super().__init__(
-            f"Agent '{agent_id}' denied '{action}' on '{resource}'"
-        )
+        if action is not None and resource is not None:
+            message = f"Agent '{agent_id}' denied '{action}' on '{resource}'"
+        else:
+            message = agent_id
+        super().__init__(message)
+
+
+class ScopeAttenuationError(ValueError):
+    """Raised when a delegation would grant a scope the delegator doesn't hold."""
 
 
 async def check_permission(
@@ -141,7 +154,7 @@ def validate_scope_subset(
     valid = list(set(requested_scopes) & set(delegating_agent_scopes))
     if len(valid) != len(requested_scopes):
         invalid = set(requested_scopes) - set(delegating_agent_scopes)
-        raise ValueError(
-            f"Cannot delegate scopes not held by delegating agent: {invalid}"
+        raise ScopeAttenuationError(
+            f"Requested scopes exceed delegator's active scopes: {invalid}"
         )
     return valid

@@ -121,7 +121,7 @@ def create_delegation_token(
     }
 
     token = jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)
-    return {"token": token, "jti": jti, "exp": exp}
+    return {"token": token, "jti": jti, "exp": exp, "expires_in": exp - now}
 
 
 def verify_agent_token(token: str) -> dict:

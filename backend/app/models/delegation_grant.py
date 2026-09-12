@@ -29,8 +29,25 @@ class DelegationGrant(Base, TimestampMixin):
     revoked_at = Column(DateTime(timezone=True), nullable=True)
     revocation_reason = Column(String(255), nullable=True)
 
-    # Audit linkage
+    # Audit linkage — for correlating this grant with the audit chain and
+    # other events in the same causal trace. NOT used to reconstruct the
+    # delegation lineage itself: causal_trace_id can legitimately be
+    # shared across unrelated branches (e.g. every token exchange that
+    # doesn't specify one defaults to the same literal string), so using
+    # it as a chain-identity key would risk unrelated agents appearing
+    # to share a delegation ancestry. parent_grant_id below is the
+    # unambiguous link for that.
     causal_trace_id = Column(String, nullable=False, index=True)
+
+    # The grant that gave the delegating agent ITS authority for this
+    # specific hop — found by matching the delegating agent's verified
+    # token jti against another grant's delegation_jti at the moment of
+    # delegation. None when the delegating agent is acting on its own
+    # root access token (never itself a delegatee), i.e. it originates
+    # this chain. Walking this pointer is how delegation_service builds
+    # the real DelegationChain for depth/cycle checks — see
+    # DelegationService._load_chain.
+    parent_grant_id = Column(String, ForeignKey("delegation_grants.id"), nullable=True, index=True)
 
     # Relationships
     delegating_agent = relationship(
@@ -40,6 +57,9 @@ class DelegationGrant(Base, TimestampMixin):
     delegatee_agent = relationship(
         "Agent", foreign_keys=[delegatee_agent_id],
         back_populates="delegation_grants_received"
+    )
+    parent_grant = relationship(
+        "DelegationGrant", remote_side=[id], foreign_keys=[parent_grant_id]
     )
 
     def __repr__(self):

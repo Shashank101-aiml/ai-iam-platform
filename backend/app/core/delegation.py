@@ -20,7 +20,19 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from app.core.config import settings
-from app.core.permissions import validate_scope_subset
+from app.core.permissions import validate_scope_subset, ScopeAttenuationError
+
+
+class DelegationDepthExceeded(ValueError):
+    """Raised when a delegation would push the chain past MAX_DELEGATION_DEPTH."""
+
+
+class DelegationCycleDetected(ValueError):
+    """Raised when the delegatee already appears somewhere in this chain."""
+
+
+class SelfDelegationError(ValueError):
+    """Raised when an agent attempts to delegate to itself."""
 
 
 @dataclass
@@ -90,16 +102,16 @@ class DelegationValidator:
         # 1. Depth check
         new_depth = chain.depth + 1
         if new_depth > settings.MAX_DELEGATION_DEPTH:
-            raise ValueError(
-                f"Delegation rejected: chain depth {new_depth} would exceed "
-                f"maximum of {settings.MAX_DELEGATION_DEPTH}. "
+            raise DelegationDepthExceeded(
+                f"Delegation rejected: chain depth {new_depth} exceeds maximum allowed "
+                f"depth of {settings.MAX_DELEGATION_DEPTH}. "
                 f"Chain: {self._format_chain(chain)}"
             )
 
         # 2. Cycle detection
         existing_ids = chain.all_agent_ids()
         if delegatee_agent_id in existing_ids:
-            raise ValueError(
+            raise DelegationCycleDetected(
                 f"Delegation rejected: cycle detected. "
                 f"Agent '{delegatee_agent_id}' is already in chain: "
                 f"{existing_ids}"
@@ -107,18 +119,15 @@ class DelegationValidator:
 
         # 3. Self-delegation
         if delegating_agent_id == delegatee_agent_id:
-            raise ValueError(
+            raise SelfDelegationError(
                 f"Delegation rejected: agent cannot delegate to itself."
             )
 
         # 4. Scope attenuation — most critical check
-        try:
-            approved_scopes = validate_scope_subset(
-                requested_scopes,
-                delegating_agent_scopes,
-            )
-        except ValueError as e:
-            raise ValueError(f"Delegation rejected: {e}")
+        approved_scopes = validate_scope_subset(
+            requested_scopes,
+            delegating_agent_scopes,
+        )
 
         return approved_scopes
 

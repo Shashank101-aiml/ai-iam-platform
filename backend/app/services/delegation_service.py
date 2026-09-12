@@ -9,31 +9,40 @@ This prevents privilege escalation through the delegation chain.
 
 Full flow:
   1. Orchestrator (has [read, execute]) calls delegate()
-  2. We fetch orchestrator's current active scopes from its JWT
-  3. We validate requested scopes are a subset
-  4. We check delegation depth against MAX_DELEGATION_DEPTH
-  5. We detect cycles (agent A → B → A is invalid)
-  6. We issue a delegation token (short-lived JWT)
-  7. We persist the DelegationGrant for audit and revocation
+  2. We resolve the orchestrator's current scopes server-side, from its
+     own verified access/delegation token — never from a caller-supplied
+     parameter — intersected with the agent's current allowed_scopes as
+     a defense-in-depth ceiling in case allowed_scopes was tightened
+     after the token was minted
+  3. We walk the REAL delegation lineage from the database (via
+     parent_grant_id, not a client-trusted depth counter) to build the
+     chain depth/cycle checks actually need
+  4. We validate requested scopes are a subset
+  5. We check delegation depth against MAX_DELEGATION_DEPTH
+  6. We detect cycles (agent A → B → A is invalid)
+  7. We issue a delegation token (short-lived JWT) carrying the real
+     approved scopes
+  8. We persist the DelegationGrant, linked to its parent, for audit,
+     revocation, and the next hop's chain walk
 """
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from app.models.delegation_grant import DelegationGrant
-from app.core.constants import AuditAction, TokenType
+from app.core.constants import AuditAction, AgentStatus, PermissionScope
 from app.core.delegation import (
     delegation_validator,
-    build_delegation_grant,
     DelegationChain,
     DelegationLink,
 )
+from app.core.permissions import ScopeAttenuationError
 from app.core.jwt import create_delegation_token
-from app.core.config import settings
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
 
@@ -48,25 +57,31 @@ class DelegationService:
         delegatee_agent_id: str,
         org_id: str,
         requested_scopes: list[str],
-        delegating_agent_scopes: list[str],  # From the delegating agent's JWT
-        current_chain: Optional[DelegationChain] = None,
-        causal_trace_id: Optional[str] = None,
+        delegating_agent_verified_scopes: list[str],
+        delegating_agent_jti: Optional[str] = None,
+        parent_trace_id: Optional[str] = None,
         ttl_seconds: int = 600,
     ) -> dict:
         """
         Issue a delegation grant from one agent to another.
 
-        Returns:
-        - delegation_token: JWT the delegatee uses to act on behalf of delegator
-        - grant_id: DB record ID for revocation
-        - approved_scopes: what was actually granted (may be subset of requested)
+        delegating_agent_verified_scopes must come from the delegating
+        agent's own verified JWT claims (request.state.agent["scopes"])
+        — never from a request body field the caller controls, or scope
+        attenuation is just the client self-reporting its privileges.
+
+        delegating_agent_jti (also from the verified token) is how the
+        real chain gets reconstructed: it's matched against
+        DelegationGrant.delegation_jti to find the grant that gave this
+        agent its own authority, then walked back to the root via
+        parent_grant_id. If no such grant exists, the agent is acting on
+        its own root access token and originates a new chain (depth 0).
+
+        Returns delegation_token, jti, expires_in, scopes, delegation_depth,
+        and the persisted grant — matching DelegationTokenResponse exactly.
         """
-        if not causal_trace_id:
-            causal_trace_id = str(uuid.uuid4())
+        causal_trace_id = parent_trace_id or str(uuid.uuid4())
 
-        chain = current_chain or DelegationChain()
-
-        # Validate agents exist and belong to org
         delegating_agent = await agent_repo.get_by_id_and_org(
             db, delegating_agent_id, org_id
         )
@@ -79,14 +94,36 @@ class DelegationService:
         if not delegatee_agent:
             raise HTTPException(status_code=404, detail="Delegatee agent not found")
 
-        from app.core.constants import AgentStatus
         if delegatee_agent.status != AgentStatus.ACTIVE:
             raise HTTPException(
                 status_code=422,
                 detail=f"Delegatee agent is not ACTIVE (status: {delegatee_agent.status})"
             )
 
-        # Run validation: depth, cycles, scope attenuation
+        try:
+            chain, parent_grant_id = await self._load_chain(
+                db, delegating_agent_jti=delegating_agent_jti
+            )
+        except ValueError as e:
+            await audit_repo.append(
+                db,
+                org_id=org_id,
+                action=AuditAction.DELEGATION_GRANTED,
+                actor_type="agent",
+                actor_id=delegating_agent_id,
+                agent_id=delegating_agent_id,
+                causal_trace_id=causal_trace_id,
+                outcome="failure",
+                details={"error": str(e)},
+            )
+            raise HTTPException(status_code=403, detail=str(e))
+
+        # Ceiling, not source of truth: a stale token can't regain scopes
+        # allowed_scopes no longer includes.
+        delegating_agent_scopes = list(
+            set(delegating_agent_verified_scopes) & set(delegating_agent.allowed_scopes or [])
+        )
+
         try:
             approved_scopes = delegation_validator.validate(
                 chain=chain,
@@ -95,7 +132,21 @@ class DelegationService:
                 delegating_agent_scopes=delegating_agent_scopes,
                 requested_scopes=requested_scopes,
             )
+        except ScopeAttenuationError as e:
+            await audit_repo.append(
+                db,
+                org_id=org_id,
+                action=AuditAction.DELEGATION_GRANTED,
+                actor_type="agent",
+                actor_id=delegating_agent_id,
+                agent_id=delegating_agent_id,
+                causal_trace_id=causal_trace_id,
+                outcome="failure",
+                details={"error": str(e), "requested_scopes": requested_scopes},
+            )
+            raise HTTPException(status_code=422, detail=str(e))
         except ValueError as e:
+            # DelegationDepthExceeded / DelegationCycleDetected / SelfDelegationError
             await audit_repo.append(
                 db,
                 org_id=org_id,
@@ -109,27 +160,35 @@ class DelegationService:
             )
             raise HTTPException(status_code=403, detail=str(e))
 
-        current_depth = chain.depth + 1
+        new_depth = chain.depth + 1
 
-        # Issue the delegation JWT
+        # Real scopes, not []: the delegatee's token must actually carry
+        # what it was approved for.
+        token_scopes = []
+        for s in approved_scopes:
+            try:
+                token_scopes.append(PermissionScope(s))
+            except ValueError:
+                pass
+
         token_result = create_delegation_token(
             delegating_agent_id=delegating_agent_id,
             delegatee_agent_id=delegatee_agent_id,
             org_id=org_id,
-            scopes=[],  # Import PermissionScope properly in real usage
+            scopes=token_scopes,
             causal_trace_id=causal_trace_id,
-            current_depth=current_depth - 1,
+            current_depth=chain.depth,
         )
 
-        # Persist the grant for audit + revocation tracking
         grant = DelegationGrant(
             id=str(uuid.uuid4()),
             org_id=org_id,
             delegating_agent_id=delegating_agent_id,
             delegatee_agent_id=delegatee_agent_id,
             scopes=approved_scopes,
-            delegation_depth=current_depth,
+            delegation_depth=new_depth,
             delegation_jti=token_result["jti"],
+            parent_grant_id=parent_grant_id,
             is_active=True,
             expires_at=datetime.fromtimestamp(token_result["exp"], tz=timezone.utc),
             causal_trace_id=causal_trace_id,
@@ -151,19 +210,98 @@ class DelegationService:
                 "grant_id": grant.id,
                 "delegatee_agent_id": delegatee_agent_id,
                 "approved_scopes": approved_scopes,
-                "delegation_depth": current_depth,
+                "delegation_depth": new_depth,
                 "expires_at": grant.expires_at.isoformat(),
             },
         )
 
         return {
             "delegation_token": token_result["token"],
-            "grant_id": grant.id,
-            "approved_scopes": approved_scopes,
-            "delegation_depth": current_depth,
-            "expires_at": grant.expires_at,
-            "delegatee_agent_id": delegatee_agent_id,
+            "jti": token_result["jti"],
+            "expires_in": token_result["expires_in"],
+            "scopes": approved_scopes,
+            "delegation_depth": new_depth,
+            "grant": grant,
         }
+
+    async def _load_chain(
+        self, db: AsyncSession, *, delegating_agent_jti: Optional[str]
+    ) -> tuple[DelegationChain, Optional[str]]:
+        """
+        Walk parent_grant_id pointers from the grant that authorized the
+        delegating agent's current token, up to the root, building the
+        real ancestor chain from persisted state — not a value the
+        caller could simply assert.
+
+        Returns (chain, immediate_parent_grant_id). immediate_parent_grant_id
+        is what the new grant being created should record as ITS OWN
+        parent_grant_id, continuing the lineage for the next hop.
+
+        Raises ValueError if the grant that authorized this agent (or
+        any ancestor of it) has been revoked — a delegation can't proceed
+        through a broken link in its own lineage, even before Slice 9's
+        JTI-blacklist makes already-issued downstream tokens stop working
+        immediately rather than at their natural expiry.
+        """
+        if not delegating_agent_jti:
+            return DelegationChain(), None
+
+        result = await db.execute(
+            select(DelegationGrant).where(
+                DelegationGrant.delegation_jti == delegating_agent_jti
+            )
+        )
+        own_grant = result.scalar_one_or_none()
+        if not own_grant:
+            # Acting on a root access token, not a delegation token —
+            # this agent originates a new chain.
+            return DelegationChain(), None
+
+        if not own_grant.is_active:
+            raise ValueError(
+                f"Delegation rejected: the grant that authorized this agent "
+                f"(grant_id={own_grant.id}) has been revoked."
+            )
+
+        ancestors: list[DelegationGrant] = [own_grant]
+        visited_ids = {own_grant.id}
+        current = own_grant
+        while current.parent_grant_id:
+            if current.parent_grant_id in visited_ids:
+                break  # malformed data — never loop forever
+            result = await db.execute(
+                select(DelegationGrant).where(
+                    DelegationGrant.id == current.parent_grant_id
+                )
+            )
+            parent = result.scalar_one_or_none()
+            if not parent:
+                break
+            if not parent.is_active:
+                raise ValueError(
+                    f"Delegation rejected: an ancestor grant (grant_id={parent.id}) "
+                    f"in this chain has been revoked."
+                )
+            ancestors.append(parent)
+            visited_ids.add(parent.id)
+            current = parent
+
+        ancestors.reverse()  # root-first order
+        links = [
+            DelegationLink(
+                grant_id=g.id,
+                delegating_agent_id=g.delegating_agent_id,
+                delegatee_agent_id=g.delegatee_agent_id,
+                scopes=g.scopes,
+                depth=g.delegation_depth,
+                issued_at=g.created_at,
+                expires_at=g.expires_at,
+                causal_trace_id=g.causal_trace_id,
+                revoked=not g.is_active,
+            )
+            for g in ancestors
+        ]
+        return DelegationChain(links=links), own_grant.id
 
     async def revoke_grant(
         self,
@@ -177,10 +315,14 @@ class DelegationService:
         """
         Revoke a delegation grant immediately.
 
-        Note: The delegation JWT will still be cryptographically valid
-        until it expires. True revocation requires a JTI blacklist
-        (Redis in production). Here we mark the DB grant as revoked,
-        which the delegation auth middleware checks.
+        Since Slice 5, any FURTHER delegation attempted through this
+        grant (or through any grant descending from it) is blocked at
+        the next hop — _load_chain refuses to build a chain through a
+        revoked ancestor. What this does NOT yet do: invalidate the
+        delegation JWT itself, or any token already issued further down
+        the chain — those stay cryptographically valid until they
+        naturally expire. Closing that gap needs a JTI blacklist
+        (Redis), tracked separately.
         """
         from sqlalchemy import update, select
         from app.models.delegation_grant import DelegationGrant as DG

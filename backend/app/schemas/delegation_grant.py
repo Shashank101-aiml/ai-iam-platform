@@ -30,6 +30,7 @@ class DelegationGrantResponse(BaseModel):
     revoked_at: Optional[datetime] = None
     revocation_reason: Optional[str] = None
     causal_trace_id: str
+    parent_grant_id: Optional[str] = None
     created_at: datetime
 
 
