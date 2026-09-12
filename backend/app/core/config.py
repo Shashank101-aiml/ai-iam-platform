@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # OPA — policy engine
     OPA_URL: str = "http://localhost:8181"
     OPA_POLICY_PATH: str = "v1/data/aiiam/authz"
+    # Refuse to start if OPA is unreachable (see core/permissions.py's
+    # verify_opa_reachable, called from main.py's lifespan). A policy
+    # engine that's silently unreachable would deny every real request
+    # forever while looking "up" from the outside — better to never
+    # accept traffic. Set False only for narrow local work that
+    # genuinely doesn't exercise policy enforcement.
+    OPA_REQUIRED: bool = True
 
     # Security hardening
     BCRYPT_ROUNDS: int = 12

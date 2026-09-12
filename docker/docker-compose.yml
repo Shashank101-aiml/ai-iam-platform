@@ -43,7 +43,13 @@ services:
     ports:
       - "8181:8181"
     volumes:
-      - ./backend/policies:/policies:ro
+      # ../ , not ./ — this compose file lives in docker/, so a bare
+      # ./backend/policies resolved to docker/backend/policies (an
+      # empty, silently auto-created directory) instead of the real
+      # backend/policies at the project root. Invisible for as long as
+      # the directory had no real content to be missing; confirmed via
+      # `docker inspect aiiam_opa` once it mattered.
+      - ../backend/policies:/policies:ro
     healthcheck:
       test: ["CMD-SHELL", "netstat -tln | grep -q ':8181 '"]
       interval: 15s
@@ -67,7 +73,13 @@ services:
       DEBUG: "true"
       DATABASE_URL: "postgresql+asyncpg://aiiam_user:${DB_PASSWORD:-supersecretpassword}@postgres:5432/aiiam_db"
       JWT_SECRET_KEY: "${JWT_SECRET_KEY:-default_super_secret_jwt_key_256_bit_string}"
-      OPA_URL: "http://opa:8181/v1/data/ai_iam/rebac/allow"
+      # Bare origin only — app/core/permissions.py appends OPA_POLICY_PATH
+      # itself (defaults to v1/data/aiiam/authz, matching
+      # backend/policies/authz.rego's package). This was previously set
+      # to a full (and wrongly-named) data path, which permissions.py
+      # then appended the real path onto — producing a doubly-broken,
+      # nonexistent URL that OPA would 404 on every real request.
+      OPA_URL: "http://opa:8181"
       SPIRE_AGENT_SOCKET: "unix:///tmp/spire-agent/public/api.sock"
       SPIFFE_TRUST_DOMAIN: "ai-iam.internal"
       BCRYPT_ROUNDS: "12"

@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.jwt import verify_rs256_keypair_loadable
+from app.core.permissions import verify_opa_reachable
 from app.middleware.agent_auth import AgentAuthMiddleware
 from app.middleware.trace_propagation import TracePropagationMiddleware
 from app.db.session import engine
@@ -54,6 +55,15 @@ async def lifespan(app: FastAPI):
         logger.info("RS256 agent token keypair verified")
     except Exception as e:
         logger.error(f"RS256 keypair invalid or unreadable: {e}")
+        raise
+
+    # Verify OPA is reachable — see verify_opa_reachable's docstring for
+    # why this refuses to boot rather than starting degraded.
+    try:
+        await verify_opa_reachable()
+        logger.info("OPA policy engine reachable" if settings.OPA_REQUIRED else "OPA_REQUIRED=false — skipped OPA reachability check")
+    except Exception as e:
+        logger.error(f"OPA reachability check failed: {e}")
         raise
 
     # Start background workers

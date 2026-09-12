@@ -19,6 +19,33 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 
 
+async def verify_opa_reachable() -> None:
+    """
+    Fail fast at startup if OPA is unreachable — called from main.py's
+    lifespan, gated by settings.OPA_REQUIRED (default True).
+
+    check_permission already fails closed on a per-request timeout or
+    connection error, so this isn't needed for correctness — it's about
+    honesty at boot. A deployment that starts "successfully" with a
+    dead policy engine looks healthy from the outside (the HTTP server
+    is up) while silently denying every tool call forever; refusing to
+    accept traffic at all is the less misleading failure mode.
+    """
+    if not settings.OPA_REQUIRED:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.OPA_URL}/health")
+            resp.raise_for_status()
+    except httpx.HTTPError as e:
+        raise RuntimeError(
+            f"OPA is required (OPA_REQUIRED=true) but unreachable at "
+            f"'{settings.OPA_URL}/health': {e}. Set OPA_REQUIRED=false "
+            f"only for narrow local work that doesn't exercise policy "
+            f"enforcement."
+        ) from e
+
+
 class PermissionDeniedError(Exception):
     """
     Raised when OPA denies an access request.
