@@ -97,6 +97,23 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_REQUIRED: bool = True
 
+    # OAuth 2.1 / MCP resource-server compliance (RFC 8414 discovery,
+    # RFC 9728 protected-resource metadata, RFC 7591 Dynamic Client
+    # Registration, RFC 8707 Resource Indicators) — see api/oauth.py.
+    # This platform IS the Authorization Server (it already mints its
+    # own RS256 tokens) and the MCP proxy IS the protected resource;
+    # PUBLIC_BASE_URL is the externally-reachable origin both discovery
+    # documents advertise their endpoints under. Must be set to the
+    # real public origin outside local dev — discovery documents built
+    # from "http://localhost:8000" are useless to any client that isn't
+    # also running on the same machine.
+    PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # How long an issued authorization `code` stays redeemable —
+    # OAuth 2.1 recommends short-lived, single-use codes; this is
+    # generous enough for a real redirect round-trip, not for leaving a
+    # code sitting in a browser history.
+    OAUTH_AUTHORIZATION_CODE_TTL_SECONDS: int = 120
+
     class Config:
         env_file = ".env"
         case_sensitive = True

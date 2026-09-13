@@ -9,6 +9,7 @@ from app.models.delegation_grant import DelegationGrant
 from app.models.mcp_session import McpSession
 from app.models.permission import Permission
 from app.models.role import Role, agent_roles
+from app.models.oauth_client import OAuthClient
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "Permission",
     "Role",
     "agent_roles",
+    "OAuthClient",
 ]

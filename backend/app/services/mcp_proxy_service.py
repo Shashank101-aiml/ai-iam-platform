@@ -124,6 +124,7 @@ class McpProxyService:
         causal_trace_id: str,
         delegation_depth: int = 0,
         source_ip: Optional[str] = None,
+        token_resource: Optional[str] = None,
     ) -> dict:
         """
         Proxy a tool call through binding resolution and policy enforcement.
@@ -131,12 +132,13 @@ class McpProxyService:
         Steps:
         1. Resolve mcp_server_url + tool_filter from the agent's own
            mcp_bindings (never from the caller — SSRF prevention)
-        2. OPA policy check (fail closed)
-        3. tool_filter enforcement
-        4. If allowed: forward to MCP server (circuit-breaker + size/time bounded)
-        5. Record session with hashed args/results
-        6. Emit audit event
-        7. Return result to agent
+        2. RFC 8707 Resource Indicator enforcement (token_resource, if set)
+        3. OPA policy check (fail closed)
+        4. tool_filter enforcement
+        5. If allowed: forward to MCP server (circuit-breaker + size/time bounded)
+        6. Record session with hashed args/results
+        7. Emit audit event
+        8. Return result to agent
         """
         session_id = str(uuid.uuid4())
         args_hash = _hash_payload(tool_args)
@@ -173,7 +175,45 @@ class McpProxyService:
                 },
             )
 
-        # Step 2: Policy enforcement BEFORE the call
+        # Step 2: RFC 8707 Resource Indicator enforcement — a token
+        # minted bound to ONE specific mcp_server_id (via the OAuth
+        # authorization_code flow's resource= parameter — see
+        # api/oauth.py and core/jwt.py's create_agent_access_token)
+        # must never work against any OTHER server, even one the agent
+        # is separately bound to and even though scopes/OPA would
+        # otherwise allow it. token_resource is None for tokens from
+        # the legacy /token/exchange path — unchanged, scope-only
+        # behavior for those.
+        if token_resource is not None and token_resource != mcp_server_id:
+            reason = (
+                f"token is bound to resource '{token_resource}' "
+                f"(RFC 8707 Resource Indicators), not '{mcp_server_id}'"
+            )
+            await self._block(
+                db,
+                session_id=session_id,
+                org_id=org_id,
+                agent_id=agent_id,
+                mcp_server_id=mcp_server_id,
+                mcp_server_url=server_url,
+                tool_name=tool_name,
+                args_hash=args_hash,
+                args_metadata=args_metadata,
+                causal_trace_id=causal_trace_id,
+                reason=reason,
+                source_ip=source_ip,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "tool_call_blocked",
+                    "tool": tool_name,
+                    "reason": reason,
+                    "session_id": session_id,
+                },
+            )
+
+        # Step 3: Policy enforcement BEFORE the call
         try:
             await check_permission(
                 agent_id=agent_id,
@@ -209,7 +249,7 @@ class McpProxyService:
                 },
             )
 
-        # Step 3: per-binding tool allowlist — defense in depth even if
+        # Step 4: per-binding tool allowlist — defense in depth even if
         # scopes/OPA would otherwise allow this call.
         if tool_filter is not None and tool_name not in tool_filter:
             reason = f"tool '{tool_name}' is not in this binding's tool_filter"
@@ -237,7 +277,7 @@ class McpProxyService:
                 },
             )
 
-        # Step 4: Forward to actual MCP server
+        # Step 5: Forward to actual MCP server
         result, error_code = await self._call_mcp_server(
             server_url, mcp_server_id, tool_name, tool_args
         )
@@ -245,7 +285,7 @@ class McpProxyService:
         call_status = "success" if error_code is None else "error"
         result_hash = _hash_payload(result) if result is not None else None
 
-        # Step 5: Record session with hashes only
+        # Step 6: Record session with hashes only
         await self._record_session(
             db,
             session_id=session_id,
@@ -265,7 +305,7 @@ class McpProxyService:
             error_code=error_code,
         )
 
-        # Step 6: Audit event
+        # Step 7: Audit event
         await audit_repo.append(
             org_id=org_id,
             action=(

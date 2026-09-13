@@ -53,6 +53,7 @@ async def execute_mcp_tool(
         causal_trace_id=trace_id,
         delegation_depth=current_agent.get("delegation_depth", 0),
         source_ip=request.client.host if request.client else None,
+        token_resource=current_agent.get("resource"),
     )
 
     # Compute hashes for response DTO match

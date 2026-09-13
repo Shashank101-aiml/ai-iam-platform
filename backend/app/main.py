@@ -141,7 +141,8 @@ def create_app() -> FastAPI:
     # ── Routers ───────────────────────────────────────────────────────────────
     from app.api import (
         health, auth, organizations, agents,
-        api_keys, audit_logs, mcp_proxy, token, roles, users
+        api_keys, audit_logs, mcp_proxy, token, roles, users,
+        oauth, well_known,
     )
 
     prefix = "/api/v1"
@@ -161,6 +162,9 @@ def create_app() -> FastAPI:
     app.include_router(token.router, prefix=f"{prefix}/token", tags=["token"])
     app.include_router(roles.router, prefix=f"{prefix}/roles", tags=["roles"])
     app.include_router(users.router, prefix=f"{prefix}/users", tags=["users"])
+    app.include_router(oauth.router, prefix=f"{prefix}/oauth", tags=["oauth"])
+    # No prefix — RFC 8414/9728 require these at a fixed root-level path.
+    app.include_router(well_known.router, tags=["discovery"])
 
     return app
 

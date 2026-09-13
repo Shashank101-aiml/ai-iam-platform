@@ -38,9 +38,28 @@ def create_agent_access_token(
     causal_trace_id: str,
     parent_agent_id: Optional[str] = None,
     delegation_depth: int = 0,
+    resource: Optional[str] = None,
 ) -> dict:
     """
     Issue a short-lived access token for an AI agent.
+
+    resource (RFC 8707 Resource Indicators) binds this token to ONE
+    specific mcp_server_id, set when the token was minted through the
+    OAuth authorization_code flow (api/oauth.py) with a `resource=`
+    parameter. When present, mcp_proxy_service refuses to use this
+    token against any OTHER mcp_server_id, even if its scopes would
+    otherwise allow the call — composing directly with the SSRF fix in
+    _resolve_mcp_binding: that fix stops the CALLER from naming an
+    arbitrary URL, this stops a correctly-bound token from being
+    replayed against a DIFFERENT server the agent is ALSO bound to.
+    None (the default, and what every token from the legacy
+    /token/exchange path still carries) means "not resource-bound" —
+    scope-only checking, unchanged from before this existed.
+
+    Deliberately a separate claim from `aud`, not folded into it: `aud`
+    stays the fixed platform-wide audience every verify_agent_token
+    call already checks via jose's audience= parameter, so adding this
+    claim can't change what today's callers already validate.
 
     Returns both the token string and the jti so the caller
     can register it in the revocation index.
@@ -68,6 +87,8 @@ def create_agent_access_token(
 
         # Parent agent — present when this token was issued via delegation
         **({"parent_agent_id": parent_agent_id} if parent_agent_id else {}),
+        # RFC 8707 Resource Indicator — present only for OAuth-flow tokens
+        **({"resource": resource} if resource else {}),
     }
 
     token = jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)

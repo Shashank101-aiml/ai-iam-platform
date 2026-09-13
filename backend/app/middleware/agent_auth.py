@@ -38,6 +38,19 @@ EXCLUDED_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/register",
     "/api/v1/organizations",  # Org creation (bootstrap)
+    # OAuth/MCP discovery — RFC 8414/9728/7517 all require these to be
+    # fetchable with no credentials at all, by definition (a client
+    # hasn't obtained anything to authenticate WITH yet at this point).
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/jwks.json",
+    # /api/v1/oauth/token is secured by PKCE, not a bearer token — the
+    # client presenting a code_verifier has no agent JWT yet either
+    # (this IS how it gets one). /register and /authorize are already
+    # excluded from agent-auth by _requires_agent_auth's prefix list
+    # below not matching them at all; they're operator-gated
+    # (Depends(get_current_user)) instead, a separate mechanism.
+    "/api/v1/oauth/token",
 }
 
 
@@ -135,6 +148,10 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             "delegation_depth": depth,
             "parent_agent_id": payload.get("parent_agent_id"),
             "token_type": payload.get("token_type", "access"),
+            # RFC 8707 Resource Indicator, if this token was minted via
+            # the OAuth authorization_code flow with a resource=
+            # parameter — see core/jwt.py's create_agent_access_token.
+            "resource": payload.get("resource"),
         }
 
     async def _check_jti_revoked(self, jti: str) -> bool:
