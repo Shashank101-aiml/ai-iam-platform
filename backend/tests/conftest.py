@@ -48,6 +48,15 @@ AUDIT_TEST_DATABASE_URL = make_url(TEST_DATABASE_URL).set(
 ).render_as_string(hide_password=False)
 os.environ.setdefault("AUDIT_DATABASE_URL", AUDIT_TEST_DATABASE_URL)
 
+# Revocation index (app/core/revocation.py) — a different Redis DB index
+# than the dev default (0), not a different instance, so a fresh
+# `redis:7-alpine` isn't required just for tests. Same ordering
+# constraint as AUDIT_DATABASE_URL above: settings.REDIS_URL is read at
+# first import of app.core.config, which `from app.main import app`
+# below triggers — set this before that line, not after.
+TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/1")
+os.environ.setdefault("REDIS_URL", TEST_REDIS_URL)
+
 import pytest_asyncio
 from typing import AsyncGenerator
 from sqlalchemy import text
@@ -75,6 +84,23 @@ test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullP
 TestingSessionLocal = async_sessionmaker(
     bind=test_engine, class_=AsyncSession, expire_on_commit=False
 )
+
+
+@pytest_asyncio.fixture(scope="function", autouse=True)
+async def _flush_test_redis() -> AsyncGenerator[None, None]:
+    """
+    Isolate every test's revocation-index state. Flushes only the ONE
+    test-dedicated Redis DB (see TEST_REDIS_URL above) — never touches
+    whatever DB index a dev/prod deployment would actually use.
+    """
+    from app.core.revocation import get_redis_client, reset_redis_client
+
+    await reset_redis_client()
+    client = get_redis_client()
+    await client.flushdb()
+    yield
+    await client.flushdb()
+    await reset_redis_client()
 
 
 @pytest_asyncio.fixture(scope="function")

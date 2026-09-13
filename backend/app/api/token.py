@@ -9,12 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.schemas.token import TokenExchangeRequest, AgentJwtResponse, TokenInspectResponse
-from app.schemas.delegation_grant import DelegationCreateRequest, DelegationTokenResponse
+from app.schemas.delegation_grant import (
+    DelegationCreateRequest,
+    DelegationTokenResponse,
+    DelegationRevokeRequest,
+    DelegationRevokeResponse,
+)
 from app.services.api_key_service import api_key_service
 from app.services.delegation_service import delegation_service
 from app.core.jwt import create_agent_access_token, verify_agent_token, extract_jti
 from app.core.constants import PermissionScope
-from app.api.deps import get_current_agent_state
+from app.core.revocation import track_issued_jti
+from app.api.deps import get_current_agent_state, get_current_user
+from app.models.user import User
 
 router = APIRouter()
 
@@ -70,6 +77,16 @@ async def exchange_token(
             causal_trace_id=trace_id,
             delegation_depth=0,
         )
+        # Track this jti under both reverse indexes a cascade revoke
+        # reads from — suspending/decommissioning the agent, or revoking
+        # the API key it came from, needs to find this token to
+        # blacklist it; JWTs are otherwise stateless.
+        await track_issued_jti(
+            f"agent:{key_info['agent_id']}:jtis", token_dict["jti"], token_dict["exp"]
+        )
+        await track_issued_jti(
+            f"key:{key_info['key_id']}:jtis", token_dict["jti"], token_dict["exp"]
+        )
         return {
             "access_token": token_dict["token"],
             "token_type": "bearer",
@@ -114,6 +131,30 @@ async def create_delegation_grant(
     )
     await db.commit()
     return grant_result
+
+
+@router.post("/delegations/{grant_id}/revoke", response_model=DelegationRevokeResponse)
+async def revoke_delegation_grant(
+    grant_id: str,
+    revoke_in: DelegationRevokeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Revoke a delegation grant immediately, cascading to every grant
+    descending from it. Operator-facing (not agent-facing) — revocation
+    is a governance action, same trust boundary as suspend/decommission
+    in api/agents.py.
+    """
+    result = await delegation_service.revoke_grant(
+        db,
+        grant_id=grant_id,
+        org_id=current_user.org_id,
+        actor_id=f"user:{current_user.id}",
+        reason=revoke_in.reason,
+    )
+    await db.commit()
+    return result
 
 
 @router.post("/inspect", response_model=TokenInspectResponse)

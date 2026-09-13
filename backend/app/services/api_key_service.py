@@ -37,6 +37,7 @@ from app.core.security import (
     is_key_expired,
 )
 from app.core.config import settings
+from app.core.revocation import revoke_all_in_index
 from app.repositories.api_key_repo import api_key_repo
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
@@ -450,6 +451,11 @@ class ApiKeyService:
 
         await api_key_repo.deactivate_key(db, key_id)
 
+        # "No grace period" means exactly that: any access token already
+        # exchanged from this key stops working right now too, not just
+        # new exchange attempts.
+        revoked_count = await revoke_all_in_index(f"key:{key_id}:jtis")
+
         await audit_repo.append(
             org_id=org_id,
             action=AuditAction.CREDENTIAL_REVOKED,
@@ -458,7 +464,7 @@ class ApiKeyService:
             agent_id=key.agent_id,
             causal_trace_id=causal_trace_id,
             outcome="success",
-            details={"key_id": key_id, "reason": reason},
+            details={"key_id": key_id, "reason": reason, "tokens_revoked": revoked_count},
             source_ip=source_ip,
         )
         return True

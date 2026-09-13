@@ -84,6 +84,19 @@ class Settings(BaseSettings):
     MCP_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5  # consecutive failures before a server is short-circuited
     MCP_CIRCUIT_BREAKER_COOLDOWN_SECONDS: float = 30.0
 
+    # Revocation index — see app/core/revocation.py. Short token TTLs
+    # (15 min for agent access tokens) limit exposure but are not
+    # revocation: a suspended agent's or revoked delegation's tokens
+    # would otherwise keep working until they naturally expire. Fail
+    # closed on Redis being unreachable, the same choice already made
+    # for OPA (verify_opa_reachable) and for the same reason — a
+    # revocation index that's silently unreachable would let every
+    # already-revoked token through while looking "up" from the
+    # outside; refusing to boot / refusing the request is the honest
+    # failure mode, not silently trusting a token we can't check.
+    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_REQUIRED: bool = True
+
     class Config:
         env_file = ".env"
         case_sensitive = True

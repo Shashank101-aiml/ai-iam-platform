@@ -38,6 +38,13 @@ class DelegationRevokeRequest(BaseModel):
     reason: str = Field(default="Revoked by operator or delegating agent", min_length=1, max_length=255)
 
 
+class DelegationRevokeResponse(BaseModel):
+    grant_id: str
+    revoked: bool
+    descendant_grants_revoked: int
+    reason: str
+
+
 class DelegationTokenResponse(BaseModel):
     delegation_token: str
     jti: str

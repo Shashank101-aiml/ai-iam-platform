@@ -43,6 +43,7 @@ from app.core.delegation import (
 )
 from app.core.permissions import ScopeAttenuationError
 from app.core.jwt import create_delegation_token
+from app.core.revocation import track_issued_jti, revoke_jti, revoke_all_in_index
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
 
@@ -194,6 +195,14 @@ class DelegationService:
         await db.flush()
         await db.refresh(grant)
 
+        # Reverse index for cascade revoke — suspending/decommissioning
+        # the delegatee needs to find this token to blacklist it.
+        # revoke_grant() itself doesn't need this: it already has the
+        # grant's own delegation_jti column directly.
+        await track_issued_jti(
+            f"agent:{delegatee_agent_id}:jtis", token_result["jti"], token_result["exp"]
+        )
+
         await audit_repo.append(
             org_id=org_id,
             action=AuditAction.DELEGATION_GRANTED,
@@ -307,18 +316,21 @@ class DelegationService:
         org_id: str,
         actor_id: str,
         reason: str,
-    ) -> bool:
+    ) -> dict:
         """
-        Revoke a delegation grant immediately.
+        Revoke a delegation grant immediately — and cascade.
 
         Since Slice 5, any FURTHER delegation attempted through this
-        grant (or through any grant descending from it) is blocked at
-        the next hop — _load_chain refuses to build a chain through a
-        revoked ancestor. What this does NOT yet do: invalidate the
-        delegation JWT itself, or any token already issued further down
-        the chain — those stay cryptographically valid until they
-        naturally expire. Closing that gap needs a JTI blacklist
-        (Redis), tracked separately.
+        grant (or through any grant descending from it) was already
+        blocked at the next hop — _load_chain refuses to build a chain
+        through a revoked ancestor. What that alone didn't do: stop a
+        token ALREADY issued from this grant (or any descendant grant)
+        from continuing to work until it naturally expires. This walks
+        every descendant of grant_id (parent_grant_id, forward this
+        time — see _find_descendant_ids), marks each one inactive in
+        the same way, and blacklists each one's delegation_jti in the
+        revocation index — so a child grant one hop down stops working
+        immediately too, not just at its next attempted re-delegation.
         """
         from sqlalchemy import update, select
         from app.models.delegation_grant import DelegationGrant as DG
@@ -330,10 +342,13 @@ class DelegationService:
         if not grant:
             raise HTTPException(status_code=404, detail="Delegation grant not found")
 
+        descendant_ids = await self._find_descendant_ids(db, grant_id)
+        all_ids = [grant_id] + descendant_ids
+
         now = datetime.now(timezone.utc)
         await db.execute(
             update(DG)
-            .where(DG.id == grant_id)
+            .where(DG.id.in_(all_ids))
             .values(
                 is_active=False,
                 revoked_at=now,
@@ -341,6 +356,14 @@ class DelegationService:
             )
         )
         await db.flush()
+
+        result = await db.execute(
+            select(DG.delegation_jti, DG.expires_at).where(DG.id.in_(all_ids))
+        )
+        for jti, expires_at in result.all():
+            remaining = int((expires_at - now).total_seconds())
+            if remaining > 0:
+                await revoke_jti(jti, remaining)
 
         await audit_repo.append(
             org_id=org_id,
@@ -354,9 +377,40 @@ class DelegationService:
                 "grant_id": grant_id,
                 "delegatee_agent_id": grant.delegatee_agent_id,
                 "reason": reason,
+                "descendant_grants_revoked": len(descendant_ids),
             },
         )
-        return True
+        return {
+            "grant_id": grant_id,
+            "revoked": True,
+            "descendant_grants_revoked": len(descendant_ids),
+            "reason": reason,
+        }
+
+    async def _find_descendant_ids(self, db: AsyncSession, grant_id: str) -> list[str]:
+        """
+        Every grant descending from grant_id, walking parent_grant_id
+        FORWARD (children, not ancestors — the opposite direction from
+        _load_chain). Iterative breadth-first rather than a recursive
+        CTE: the depth ceiling (MAX_DELEGATION_DEPTH) already bounds
+        this to a handful of round trips at most, and it keeps the
+        query plain and easy to reason about.
+        """
+        from sqlalchemy import select
+        from app.models.delegation_grant import DelegationGrant as DG
+
+        descendants: list[str] = []
+        frontier = [grant_id]
+        while frontier:
+            result = await db.execute(
+                select(DG.id).where(DG.parent_grant_id.in_(frontier))
+            )
+            children = [row[0] for row in result.all()]
+            if not children:
+                break
+            descendants.extend(children)
+            frontier = children
+        return descendants
 
     async def get_active_grants_for_agent(
         self,

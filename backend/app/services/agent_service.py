@@ -29,6 +29,7 @@ from app.models.agent import Agent
 from app.core.constants import AgentStatus, AuditAction
 from app.core.spiffe import build_spiffe_id, spire_client
 from app.core.config import settings
+from app.core.revocation import revoke_all_in_index
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
 
@@ -246,6 +247,15 @@ class AgentService:
             raise HTTPException(status_code=422, detail="Cannot suspend a decommissioned agent")
 
         await agent_repo.update_status(db, agent_id, AgentStatus.SUSPENDED)
+
+        # Every token this agent currently holds — access tokens from a
+        # key exchange, delegation tokens received as a delegatee — stops
+        # working immediately rather than at its natural expiry. Without
+        # this, "suspend" would only stop NEW credential issuance while
+        # anything already issued kept working for up to
+        # AGENT_ACCESS_TOKEN_EXPIRE_MINUTES more.
+        revoked_count = await revoke_all_in_index(f"agent:{agent_id}:jtis")
+
         await audit_repo.append(
             org_id=org_id,
             action=AuditAction.AGENT_SUSPENDED,
@@ -254,7 +264,7 @@ class AgentService:
             agent_id=agent_id,
             causal_trace_id=causal_trace_id,
             outcome="success",
-            details={"reason": reason},
+            details={"reason": reason, "tokens_revoked": revoked_count},
             source_ip=source_ip,
         )
 
@@ -292,6 +302,7 @@ class AgentService:
         active_keys = await api_key_repo.get_active_keys_for_agent(db, agent_id)
         for key in active_keys:
             await api_key_repo.deactivate_key(db, key.key_id)
+            await revoke_all_in_index(f"key:{key.key_id}:jtis")
             await audit_repo.append(
                 org_id=org_id,
                 action=AuditAction.CREDENTIAL_REVOKED,
@@ -306,6 +317,12 @@ class AgentService:
         # 2. Update status
         await agent_repo.update_status(db, agent_id, AgentStatus.DECOMMISSIONED)
 
+        # Belt-and-suspenders on top of the per-key revocation above: any
+        # token this agent holds through a path other than an active key
+        # (e.g. a delegation token received as a delegatee) also stops
+        # working immediately.
+        revoked_count = await revoke_all_in_index(f"agent:{agent_id}:jtis")
+
         # 3. Final audit seal
         await audit_repo.append(
             org_id=org_id,
@@ -318,6 +335,7 @@ class AgentService:
             details={
                 "reason": reason,
                 "keys_revoked": len(active_keys),
+                "tokens_revoked": revoked_count,
             },
             source_ip=source_ip,
         )

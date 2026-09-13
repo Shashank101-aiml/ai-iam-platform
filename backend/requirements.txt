@@ -20,6 +20,9 @@ email-validator==2.2.0   # required by pydantic.EmailStr (app/schemas/user.py)
 # HTTP client (for OPA calls)
 httpx==0.27.2
 
+# Revocation index (JTI blacklist) — see app/core/revocation.py
+redis==5.2.0
+
 # Observability
 prometheus-fastapi-instrumentator==7.0.0
 

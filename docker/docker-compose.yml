@@ -56,6 +56,27 @@ services:
       timeout: 5s
       retries: 3
 
+  redis:
+    # Revocation index (JTI blacklist) — see app/core/revocation.py.
+    # Plain redis-alpine has a real `redis-cli` in the image, so the
+    # healthcheck can be a genuine PING rather than a port-bound proxy
+    # check (contrast with the OPA service above, which has no HTTP
+    # client available at all).
+    image: redis:7-alpine
+    container_name: aiiam_redis
+    restart: always
+    ports:
+      # 6380 on the host — another project's redis (buildit-redis-1)
+      # already holds 6379 on this machine. Only the internal
+      # docker_default network hostname/port (redis:6379) matters to the
+      # backend; the host mapping is for optional local debugging only.
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ..
@@ -66,6 +87,8 @@ services:
       postgres:
         condition: service_healthy
       opa:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       APP_NAME: "AI-IAM Platform"
@@ -89,6 +112,7 @@ services:
       # app/db/session.py's audit_engine (connects as it). Same variable
       # name the migration itself reads, so they can never drift apart.
       AUDIT_DB_PASSWORD: "${AUDIT_DB_PASSWORD:-audit_writer_dev_password}"
+      REDIS_URL: "redis://redis:6379/0"
     volumes:
       # RS256 keypair, mounted in — never baked into the image (see
       # .dockerignore: backend/keys/ is deliberately excluded from the

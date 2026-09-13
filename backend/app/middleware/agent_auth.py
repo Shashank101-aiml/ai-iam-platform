@@ -26,6 +26,7 @@ from jose.exceptions import JWTClaimsError
 
 from app.core.jwt import verify_agent_token, extract_jti
 from app.core.config import settings
+from app.core.revocation import is_revoked, RevocationCheckUnavailable
 
 
 # Routes that don't require agent authentication
@@ -87,10 +88,8 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             )
 
         # Step 2: JTI revocation check
-        # In production this hits Redis. Here we skip if no cache available.
-        # Implementors: add redis_client.get(f"revoked_jti:{jti}") check here
-        is_revoked = await self._check_jti_revoked(jti)
-        if is_revoked:
+        revoked = await self._check_jti_revoked(jti)
+        if revoked:
             raise HTTPException(
                 status_code=401,
                 detail={"error": "token_revoked", "detail": "Token has been revoked"}
@@ -140,14 +139,22 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
 
     async def _check_jti_revoked(self, jti: str) -> bool:
         """
-        Check if a JTI has been revoked.
-
-        Production: check Redis SET "revoked_jtis"
-        Development: always returns False (no revocation store)
+        Check if a JTI has been revoked via the Redis-backed revocation
+        index (see core/revocation.py). Fails closed: if the index can't
+        be reached at all, that's treated as a denial too — see
+        RevocationCheckUnavailable's docstring for why this doesn't
+        just silently return False instead.
         """
-        # TODO: integrate Redis
-        # return await redis_client.sismember("revoked_jtis", jti)
-        return False
+        try:
+            return await is_revoked(jti)
+        except RevocationCheckUnavailable as e:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "error": "revocation_check_unavailable",
+                    "detail": f"Cannot verify token has not been revoked: {e}",
+                },
+            )
 
     def _extract_bearer_token(self, request: Request) -> Optional[str]:
         auth = request.headers.get("Authorization", "")
