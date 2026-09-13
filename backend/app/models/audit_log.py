@@ -37,7 +37,17 @@ class AuditLog(Base, TimestampMixin):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     org_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
-    agent_id = Column(String, ForeignKey("agents.id"), nullable=True, index=True)
+    # Deliberately NOT a ForeignKey to agents.id. Audit entries are written
+    # out of band from the row they describe (see audit_repo.append and
+    # agent_service.register, which audits AGENT_REGISTERED before the
+    # agent row exists so the entry survives even if that write later
+    # fails) — a hard FK here previously made that a real
+    # ForeignKeyViolationError on every single agent registration under
+    # Postgres, not just a design smell. The audit log must never depend
+    # on the referential integrity of a table it's reporting on; it also
+    # needs to keep referencing an agent_id after the agent itself is
+    # long gone.
+    agent_id = Column(String, nullable=True, index=True)
 
     # What happened
     action = Column(String(100), nullable=False, index=True)
@@ -70,7 +80,6 @@ class AuditLog(Base, TimestampMixin):
     user_agent = Column(String(255), nullable=True)
 
     # Relationships
-    agent = relationship("Agent", back_populates="audit_logs")
     parent_event = relationship("AuditLog", remote_side=[id], foreign_keys=[parent_event_id])
 
     __table_args__ = (

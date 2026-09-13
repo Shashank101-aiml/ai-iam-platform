@@ -111,7 +111,6 @@ class ApiKeyService:
         await api_key_repo.create(db, api_key)
 
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.CREDENTIAL_ISSUED,
             actor_type="user",
@@ -270,7 +269,6 @@ class ApiKeyService:
 
         # No match anywhere in the org — log denied access
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.ACCESS_DENIED,
             actor_type="unknown",
@@ -315,7 +313,6 @@ class ApiKeyService:
         else:
             if record_denial_on_miss:
                 await audit_repo.append(
-                    db,
                     org_id=key.org_id,
                     action=AuditAction.ACCESS_DENIED,
                     actor_type="unknown",
@@ -332,7 +329,6 @@ class ApiKeyService:
         if grace_key:
             details["warning"] = "client_using_rotated_key"
         await audit_repo.append(
-            db,
             org_id=key.org_id,
             action=AuditAction.CREDENTIAL_USED,
             actor_type="agent",
@@ -407,7 +403,6 @@ class ApiKeyService:
         )
 
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.CREDENTIAL_ROTATED,
             actor_type="user",
@@ -456,7 +451,6 @@ class ApiKeyService:
         await api_key_repo.deactivate_key(db, key_id)
 
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.CREDENTIAL_REVOKED,
             actor_type="user",

@@ -84,6 +84,11 @@ services:
       SPIFFE_TRUST_DOMAIN: "ai-iam.internal"
       BCRYPT_ROUNDS: "12"
       MAX_DELEGATION_DEPTH: "5"
+      # Audit-log writer's own least-privileged Postgres role — see
+      # migration 0003_audit_log_durability (creates the role/grants) and
+      # app/db/session.py's audit_engine (connects as it). Same variable
+      # name the migration itself reads, so they can never drift apart.
+      AUDIT_DB_PASSWORD: "${AUDIT_DB_PASSWORD:-audit_writer_dev_password}"
     volumes:
       # RS256 keypair, mounted in — never baked into the image (see
       # .dockerignore: backend/keys/ is deliberately excluded from the

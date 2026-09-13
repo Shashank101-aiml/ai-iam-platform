@@ -68,12 +68,13 @@ class AuditService:
         Expensive — run on-demand for compliance audits, not on every request.
         Returns a verification report suitable for compliance documentation.
         """
-        is_valid, broken_at = await audit_repo.verify_chain(db, org_id)
+        is_valid, broken_at, total_checked = await audit_repo.verify_chain(db, org_id)
 
         report = {
             "org_id": org_id,
             "chain_valid": is_valid,
             "broken_at_sequence": broken_at,
+            "total_entries_checked": total_checked,
             "verification_id": str(uuid.uuid4()),
         }
 

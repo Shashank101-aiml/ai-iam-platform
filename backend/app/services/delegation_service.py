@@ -106,7 +106,6 @@ class DelegationService:
             )
         except ValueError as e:
             await audit_repo.append(
-                db,
                 org_id=org_id,
                 action=AuditAction.DELEGATION_GRANTED,
                 actor_type="agent",
@@ -134,7 +133,6 @@ class DelegationService:
             )
         except ScopeAttenuationError as e:
             await audit_repo.append(
-                db,
                 org_id=org_id,
                 action=AuditAction.DELEGATION_GRANTED,
                 actor_type="agent",
@@ -148,7 +146,6 @@ class DelegationService:
         except ValueError as e:
             # DelegationDepthExceeded / DelegationCycleDetected / SelfDelegationError
             await audit_repo.append(
-                db,
                 org_id=org_id,
                 action=AuditAction.DELEGATION_GRANTED,
                 actor_type="agent",
@@ -198,7 +195,6 @@ class DelegationService:
         await db.refresh(grant)
 
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.DELEGATION_GRANTED,
             actor_type="agent",
@@ -347,7 +343,6 @@ class DelegationService:
         await db.flush()
 
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.DELEGATION_REVOKED,
             actor_type="user",

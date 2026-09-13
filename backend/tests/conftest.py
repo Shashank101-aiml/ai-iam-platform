@@ -13,8 +13,44 @@ test database locally and in CI.
 
 import os
 import uuid
+from sqlalchemy.engine import make_url
+
+# Dedicated test database — never the dev database, so a dropped table
+# here can't take out anything a developer is looking at. Override with
+# TEST_DATABASE_URL to point at a CI service or a different local port.
+#
+# This has to be computed, and AUDIT_DATABASE_URL has to be set, BEFORE
+# `from app.main import app` below — that import chain constructs
+# app.core.config.settings and app.db.session's audit_engine at module
+# load time, reading AUDIT_DATABASE_URL from the environment right then.
+# Set it any later and the audit writer would silently connect to the
+# dev database instead of the test one (see app/repositories/audit_repo.py
+# and app/db/session.py — audit_repo.append() no longer takes the
+# caller's db session at all, precisely so it can't be pointed at the
+# wrong database by a fixture override the way get_db can be).
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://aiiam_user:supersecretpassword@localhost:5432/aiiam_test_db",
+)
+# Same database, the actual least-privileged audit-writer role (see
+# migration 0003_audit_log_durability) — proves the real restricted role
+# during tests instead of bypassing it.
+#
+# render_as_string(hide_password=False) — NOT str(...)/repr(...), which
+# SQLAlchemy's URL masks to a literal "***" by default. Building this
+# with plain str() silently produces a connection string whose password
+# really is the three characters "***", which then fails authentication
+# against Postgres with no indication why (cost real debugging time to
+# track down — asyncpg's error just says "password authentication
+# failed", not "you passed the placeholder mask instead of a password").
+AUDIT_TEST_DATABASE_URL = make_url(TEST_DATABASE_URL).set(
+    username="aiiam_audit_writer", password="audit_writer_dev_password"
+).render_as_string(hide_password=False)
+os.environ.setdefault("AUDIT_DATABASE_URL", AUDIT_TEST_DATABASE_URL)
+
 import pytest_asyncio
 from typing import AsyncGenerator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
 from httpx import AsyncClient, ASGITransport
@@ -26,14 +62,6 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.models.agent import Agent
 from app.core.constants import AgentStatus
-
-# Dedicated test database — never the dev database, so a dropped table
-# here can't take out anything a developer is looking at. Override with
-# TEST_DATABASE_URL to point at a CI service or a different local port.
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://aiiam_user:supersecretpassword@localhost:5432/aiiam_test_db",
-)
 
 # NullPool: every checkout is a genuinely fresh asyncpg connection, never
 # reused from a pool. Each test's db_session fixture does create_all at
@@ -54,6 +82,35 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create a fresh database session for a test and drop tables after cleanup."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Tests build the schema directly from the models (create_all),
+        # never via `alembic upgrade head` — so migration
+        # 0003_audit_log_durability's role/grant SQL never runs here.
+        # Recreate the same least-privileged audit-writer role by hand so
+        # tests exercise the real restricted role (audit_repo.append()
+        # connects as it — see AUDIT_TEST_DATABASE_URL above) instead of
+        # silently skipping that guarantee. CREATE ROLE is cluster-wide,
+        # not per-database, so this only actually runs once per Postgres
+        # instance — idempotent by design, not just by accident.
+        # ALTERs the password every time rather than skipping when the
+        # role already exists — this role is cluster-wide (CREATE ROLE
+        # isn't scoped to a database) and persists across container
+        # restarts via the Postgres data volume, so a stale password from
+        # some earlier state must not be able to silently outlive this.
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'aiiam_audit_writer') THEN
+                    CREATE ROLE aiiam_audit_writer LOGIN PASSWORD 'audit_writer_dev_password';
+                ELSE
+                    ALTER ROLE aiiam_audit_writer LOGIN PASSWORD 'audit_writer_dev_password';
+                END IF;
+            END
+            $$;
+        """))
+        db_name = (await conn.execute(text("SELECT current_database()"))).scalar()
+        await conn.execute(text(f'GRANT CONNECT ON DATABASE "{db_name}" TO aiiam_audit_writer'))
+        await conn.execute(text("GRANT USAGE ON SCHEMA public TO aiiam_audit_writer"))
+        await conn.execute(text("GRANT INSERT, SELECT ON audit_logs TO aiiam_audit_writer"))
 
     async with TestingSessionLocal() as session:
         yield session

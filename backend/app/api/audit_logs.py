@@ -71,6 +71,6 @@ async def verify_audit_chain(
         "org_id": report["org_id"],
         "chain_valid": report["chain_valid"],
         "broken_at_sequence": report.get("broken_at_sequence"),
-        "total_entries_checked": 100,  # Or query count
+        "total_entries_checked": report["total_entries_checked"],
         "verified_at": datetime.now(timezone.utc),
     }

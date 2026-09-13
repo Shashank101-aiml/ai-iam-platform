@@ -67,7 +67,6 @@ class Agent(Base, TimestampMixin):
     organization = relationship("Organization", back_populates="agents")
     parent_agent = relationship("Agent", remote_side=[id], foreign_keys=[parent_agent_id])
     api_keys = relationship("ApiKey", back_populates="agent", lazy="select")
-    audit_logs = relationship("AuditLog", back_populates="agent", lazy="dynamic")
     delegation_grants_given = relationship(
         "DelegationGrant",
         foreign_keys="DelegationGrant.delegating_agent_id",

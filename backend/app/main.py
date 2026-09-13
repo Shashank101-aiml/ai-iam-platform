@@ -68,16 +68,19 @@ async def lifespan(app: FastAPI):
 
     # Start background workers
     worker_task = asyncio.create_task(_start_workers())
+    audit_verifier_task = asyncio.create_task(_start_audit_verifier())
     logger.info("Background workers started")
 
     yield  # Application runs here
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
-    worker_task.cancel()
-    try:
-        await worker_task
-    except asyncio.CancelledError:
-        pass
+    for task in (worker_task, audit_verifier_task):
+        task.cancel()
+    for task in (worker_task, audit_verifier_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     await engine.dispose()
     logger.info("Shutdown complete")
@@ -87,6 +90,15 @@ async def _start_workers():
     """Launch background maintenance workers."""
     from app.worker.credential_rotator import run_worker_loop
     await run_worker_loop(interval_seconds=300)
+
+
+async def _start_audit_verifier():
+    """
+    Launch the periodic audit hash-chain verifier as its own task, on its
+    own (much longer) interval — see AUDIT_VERIFY_INTERVAL_SECONDS.
+    """
+    from app.worker.audit_verifier import run_audit_verifier_loop
+    await run_audit_verifier_loop(interval_seconds=settings.AUDIT_VERIFY_INTERVAL_SECONDS)
 
 
 def create_app() -> FastAPI:

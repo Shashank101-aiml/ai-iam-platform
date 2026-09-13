@@ -48,6 +48,31 @@ class Settings(BaseSettings):
 
     # Audit
     AUDIT_HASH_ALGORITHM: str = "sha256"   # For append-only chain integrity
+    # The audit writer connects to Postgres as its OWN least-privileged
+    # role (INSERT + SELECT on audit_logs only — see migration
+    # 0003_audit_log_durability), never as the app's own DATABASE_URL
+    # role, which has full CRUD on every other table. app/db/session.py
+    # derives the audit connection string from DATABASE_URL with just
+    # these credentials swapped in, unless AUDIT_DATABASE_URL is set
+    # explicitly (tests point this at the test database instead).
+    AUDIT_DB_USER: str = "aiiam_audit_writer"
+    AUDIT_DB_PASSWORD: str = "audit_writer_dev_password"
+    AUDIT_DATABASE_URL: Optional[str] = None
+    # This Postgres instance has no TLS certificates configured at all —
+    # asyncpg/SQLAlchemy's default "prefer" SSL negotiation still attempts
+    # opportunistic TLS regardless, and for a manually CREATE ROLE'd
+    # account (SCRAM auth, unlike the POSTGRES_USER-bootstrapped app role)
+    # that negotiation reliably surfaces as a misleading
+    # InvalidPasswordError instead of a TLS error — confirmed by the same
+    # credentials connecting fine with SSL off. Set False only once this
+    # database actually has TLS set up.
+    AUDIT_DB_SSL: bool = False
+    AUDIT_VERIFY_BATCH_SIZE: int = 1000  # verify_chain streams in batches this size, never loads a whole org's chain into memory
+    # The verifier worker re-hashes an org's ENTIRE chain from genesis on
+    # every run — cheap in memory (streamed), not in time for a
+    # long-lived org, so this runs far less often than the credential
+    # rotation loop, not on the same cadence.
+    AUDIT_VERIFY_INTERVAL_SECONDS: int = 3600
 
     # MCP proxy — bounding the blast radius of a slow, wedged, or
     # malicious/compromised downstream MCP server. mcp_server_url is never

@@ -94,7 +94,6 @@ class AgentService:
 
         # Audit BEFORE the DB write — if the write fails, audit still exists
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.AGENT_REGISTERED,
             actor_type="user",
@@ -152,7 +151,6 @@ class AgentService:
         await agent_repo.update_status(db, agent_id, AgentStatus.ACTIVE)
 
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.AGENT_ACTIVATED,
             actor_type="user",
@@ -210,7 +208,6 @@ class AgentService:
         )
 
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.AGENT_ACTIVATED,
             actor_type="system",
@@ -250,7 +247,6 @@ class AgentService:
 
         await agent_repo.update_status(db, agent_id, AgentStatus.SUSPENDED)
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.AGENT_SUSPENDED,
             actor_type="user",
@@ -297,7 +293,6 @@ class AgentService:
         for key in active_keys:
             await api_key_repo.deactivate_key(db, key.key_id)
             await audit_repo.append(
-                db,
                 org_id=org_id,
                 action=AuditAction.CREDENTIAL_REVOKED,
                 actor_type="system",
@@ -313,7 +308,6 @@ class AgentService:
 
         # 3. Final audit seal
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.AGENT_DECOMMISSIONED,
             actor_type="user",

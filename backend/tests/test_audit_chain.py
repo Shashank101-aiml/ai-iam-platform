@@ -19,7 +19,6 @@ async def test_audit_chain_links_sequentially_and_verifies(
     """Verifies that multiple appended audit entries maintain sequential hash integrity."""
     # Append event 1
     ev1 = await audit_repo.append(
-        db_session,
         org_id=test_org.id,
         action=AuditAction.AGENT_REGISTERED,
         actor_type="user",
@@ -35,7 +34,6 @@ async def test_audit_chain_links_sequentially_and_verifies(
 
     # Append event 2
     ev2 = await audit_repo.append(
-        db_session,
         org_id=test_org.id,
         action=AuditAction.AGENT_ACTIVATED,
         actor_type="user",
@@ -49,9 +47,10 @@ async def test_audit_chain_links_sequentially_and_verifies(
     assert ev2.previous_hash == ev1.entry_hash
 
     # Verify chain validity
-    is_valid, broken_at = await audit_repo.verify_chain(db_session, test_org.id)
+    is_valid, broken_at, total_checked = await audit_repo.verify_chain(db_session, test_org.id)
     assert is_valid is True
     assert broken_at is None
+    assert total_checked == 2
 
 
 @pytest.mark.asyncio
@@ -61,7 +60,6 @@ async def test_tamper_detection_alerts_on_broken_chain(
     """Verifies that altering an entry hash breaks the chain and flags exact sequence."""
     # Append two events
     await audit_repo.append(
-        db_session,
         org_id=test_org.id,
         action=AuditAction.CREDENTIAL_ISSUED,
         actor_type="user",
@@ -71,7 +69,6 @@ async def test_tamper_detection_alerts_on_broken_chain(
         outcome="success",
     )
     ev2 = await audit_repo.append(
-        db_session,
         org_id=test_org.id,
         action=AuditAction.CREDENTIAL_ROTATED,
         actor_type="user",
@@ -89,6 +86,7 @@ async def test_tamper_detection_alerts_on_broken_chain(
     await db_session.commit()
 
     # Run verification check
-    is_valid, broken_at = await audit_repo.verify_chain(db_session, test_org.id)
+    is_valid, broken_at, total_checked = await audit_repo.verify_chain(db_session, test_org.id)
     assert is_valid is False
     assert broken_at == 1
+    assert total_checked == 1  # stops at the first broken link, never reads entry 2

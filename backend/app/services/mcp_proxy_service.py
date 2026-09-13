@@ -267,7 +267,6 @@ class McpProxyService:
 
         # Step 6: Audit event
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=(
                 AuditAction.MCP_TOOL_COMPLETED
@@ -430,7 +429,6 @@ class McpProxyService:
             causal_trace_id=causal_trace_id,
         )
         await audit_repo.append(
-            db,
             org_id=org_id,
             action=AuditAction.MCP_TOOL_BLOCKED,
             actor_type="agent",
