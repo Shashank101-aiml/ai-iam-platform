@@ -35,7 +35,7 @@ class Agent(Base, TimestampMixin):
 
     # SPIFFE workload identity — set after agent is activated by SPIRE
     spiffe_id = Column(String(512), unique=True, nullable=True, index=True)
-    # Example: spiffe://ai-iam.example.com/org/acme/agent/agt_uuid
+    # Example: spiffe://ai-iam.internal/ns/acme/sa/agt_uuid
 
     # Hierarchy — for multi-agent orchestration
     parent_agent_id = Column(

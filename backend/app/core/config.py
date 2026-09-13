@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     API_KEY_DEFAULT_TTL_DAYS: int = 30
 
     # SPIFFE — workload identity
-    SPIFFE_TRUST_DOMAIN: str = "ai-iam.example.com"
+    SPIFFE_TRUST_DOMAIN: str = "ai-iam.internal"
     SPIRE_AGENT_SOCKET: Optional[str] = "/tmp/spire-agent/public/api.sock"
 
     # OPA — policy engine

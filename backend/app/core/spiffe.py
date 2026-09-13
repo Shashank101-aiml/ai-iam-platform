@@ -10,7 +10,11 @@ Why this matters vs plain API keys:
   to YOUR workload identity, short-lived, auto-rotated by SPIRE"
 
 A SPIFFE Verifiable Identity Document (SVID) looks like:
-  spiffe://ai-iam.example.com/org/acme/agent/agent-uuid
+  spiffe://ai-iam.internal/ns/acme/sa/agent-uuid
+
+(namespace/service-account, matching the SPIFFE Kubernetes convention
+this platform's ID scheme follows — org maps to namespace, agent to
+service account.)
 
 This module:
 1. Generates the SPIFFE ID (URI) for a registered agent
@@ -45,12 +49,16 @@ def build_spiffe_id(org_id: str, agent_id: str) -> str:
     """
     Construct the canonical SPIFFE ID for an agent.
 
-    Format: spiffe://<trust-domain>/org/<org_id>/agent/<agent_id>
-    Example: spiffe://ai-iam.example.com/org/acme-corp/agent/agt_a3f9c2
+    Format: spiffe://<trust-domain>/ns/<org_id>/sa/<agent_id>
+    Example: spiffe://ai-iam.internal/ns/acme-corp/sa/agt_a3f9c2
+
+    namespace/service-account (not org/agent) — the SPIFFE Kubernetes
+    convention this platform's ID scheme follows: org_id maps to
+    namespace, agent_id to service account.
 
     This URI becomes the Subject of the X.509 cert issued by SPIRE.
     """
-    return f"spiffe://{settings.SPIFFE_TRUST_DOMAIN}/org/{org_id}/agent/{agent_id}"
+    return f"spiffe://{settings.SPIFFE_TRUST_DOMAIN}/ns/{org_id}/sa/{agent_id}"
 
 
 def parse_spiffe_id(spiffe_uri: str) -> Optional[AgentSVID]:
@@ -63,8 +71,8 @@ def parse_spiffe_id(spiffe_uri: str) -> Optional[AgentSVID]:
     """
     pattern = (
         r"^spiffe://(?P<trust_domain>[^/]+)"
-        r"/org/(?P<org_id>[^/]+)"
-        r"/agent/(?P<agent_id>[^/]+)$"
+        r"/ns/(?P<org_id>[^/]+)"
+        r"/sa/(?P<agent_id>[^/]+)$"
     )
     match = re.match(pattern, spiffe_uri)
     if not match:
