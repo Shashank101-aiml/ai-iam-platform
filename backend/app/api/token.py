@@ -17,9 +17,12 @@ from app.schemas.delegation_grant import (
 )
 from app.services.api_key_service import api_key_service
 from app.services.delegation_service import delegation_service
+from app.services.agent_service import agent_service
 from app.core.jwt import create_agent_access_token, verify_agent_token, extract_jti
-from app.core.constants import PermissionScope
+from app.core.constants import PermissionScope, AuditAction
 from app.core.revocation import track_issued_jti
+from app.repositories.agent_repo import agent_repo
+from app.repositories.audit_repo import audit_repo
 from app.api.deps import get_current_agent_state, get_current_user
 from app.models.user import User
 
@@ -70,12 +73,18 @@ async def exchange_token(
             except ValueError:
                 pass
 
+        agent = await agent_repo.get_by_id_and_org(db, key_info["agent_id"], key_info["org_id"])
+        on_behalf_of = await agent_service.resolve_on_behalf_of(
+            db, agent=agent, requested_scopes=key_info["scopes"]
+        )
+
         token_dict = create_agent_access_token(
             agent_id=key_info["agent_id"],
             org_id=key_info["org_id"],
             scopes=scopes,
             causal_trace_id=trace_id,
             delegation_depth=0,
+            on_behalf_of=on_behalf_of,
         )
         # Track this jti under both reverse indexes a cascade revoke
         # reads from — suspending/decommissioning the agent, or revoking
@@ -87,6 +96,25 @@ async def exchange_token(
         await track_issued_jti(
             f"key:{key_info['key_id']}:jtis", token_dict["jti"], token_dict["exp"]
         )
+
+        if on_behalf_of:
+            # A separate entry, not folded into the CREDENTIAL_USED event
+            # api_key_service already wrote above: that entry is
+            # committed before on_behalf_of is even resolved (append-only
+            # means it can't be edited after the fact), and audit_repo
+            # entries are otherwise about actions, not JWT claims. This
+            # is what get_trace()'s originating_operator field scans for.
+            await audit_repo.append(
+                org_id=key_info["org_id"],
+                action=AuditAction.CREDENTIAL_USED,
+                actor_type="agent",
+                actor_id=key_info["agent_id"],
+                agent_id=key_info["agent_id"],
+                causal_trace_id=trace_id,
+                outcome="success",
+                details={"jti": token_dict["jti"], "on_behalf_of": on_behalf_of},
+            )
+
         return {
             "access_token": token_dict["token"],
             "token_type": "bearer",
@@ -95,6 +123,7 @@ async def exchange_token(
             "scopes": key_info["scopes"],
             "causal_trace_id": trace_id,
             "delegation_depth": 0,
+            "on_behalf_of": on_behalf_of,
         }
     else:
         raise HTTPException(
@@ -128,6 +157,7 @@ async def create_delegation_grant(
         delegating_agent_jti=current_agent.get("jti"),
         parent_trace_id=del_in.causal_trace_id or current_agent.get("causal_trace_id"),
         ttl_seconds=del_in.ttl_seconds,
+        on_behalf_of=current_agent.get("on_behalf_of"),
     )
     await db.commit()
     return grant_result

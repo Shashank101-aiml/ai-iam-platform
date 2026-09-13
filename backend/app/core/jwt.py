@@ -39,6 +39,7 @@ def create_agent_access_token(
     parent_agent_id: Optional[str] = None,
     delegation_depth: int = 0,
     resource: Optional[str] = None,
+    on_behalf_of: Optional[str] = None,
 ) -> dict:
     """
     Issue a short-lived access token for an AI agent.
@@ -89,6 +90,11 @@ def create_agent_access_token(
         **({"parent_agent_id": parent_agent_id} if parent_agent_id else {}),
         # RFC 8707 Resource Indicator — present only for OAuth-flow tokens
         **({"resource": resource} if resource else {}),
+        # Which human operator's authority this token carries — resolved
+        # server-side (agent_service.resolve_on_behalf_of), never
+        # caller-supplied. Absent for agents with no human anchor at
+        # all (a legitimate "acting purely as a service identity" state).
+        **({"on_behalf_of": on_behalf_of} if on_behalf_of else {}),
     }
 
     token = jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)
@@ -106,6 +112,7 @@ def create_delegation_token(
     scopes: list[PermissionScope],
     causal_trace_id: str,
     current_depth: int,
+    on_behalf_of: Optional[str] = None,
 ) -> dict:
     """
     Issue a delegation token that lets one agent act on behalf of another.
@@ -113,6 +120,13 @@ def create_delegation_token(
     Hard-stops at MAX_DELEGATION_DEPTH to prevent infinite chains.
     The scopes here can ONLY be a subset of the delegating agent's own scopes
     — callers must enforce this before calling.
+
+    on_behalf_of, when the delegating agent's OWN verified token carried
+    one, is propagated unchanged to the delegatee's token — delegation
+    attenuates scope, never the human the chain ultimately traces back
+    to. The caller (delegation_service.delegate) must read this from
+    the delegating agent's verified JWT claims, never accept it as a
+    request-body field — same rule as scopes.
     """
     if current_depth >= settings.MAX_DELEGATION_DEPTH:
         raise ValueError(
@@ -139,6 +153,7 @@ def create_delegation_token(
         "scopes": [s.value for s in scopes],
         "causal_trace_id": causal_trace_id,
         "delegation_depth": current_depth + 1,
+        **({"on_behalf_of": on_behalf_of} if on_behalf_of else {}),
     }
 
     token = jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)

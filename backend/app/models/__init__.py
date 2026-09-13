@@ -10,6 +10,7 @@ from app.models.mcp_session import McpSession
 from app.models.permission import Permission
 from app.models.role import Role, agent_roles
 from app.models.oauth_client import OAuthClient
+from app.models.on_behalf_of_grant import OnBehalfOfGrant
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "Role",
     "agent_roles",
     "OAuthClient",
+    "OnBehalfOfGrant",
 ]

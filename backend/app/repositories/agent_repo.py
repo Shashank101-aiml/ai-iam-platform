@@ -81,6 +81,19 @@ class AgentRepository(BaseRepository[Agent]):
         await db.flush()
         return result.scalar_one_or_none() is not None
 
+    async def set_activated_by(
+        self, db: AsyncSession, agent_id: str, user_id: str
+    ) -> bool:
+        """Records the operator who activated this agent — see Agent.activated_by_user_id's docstring."""
+        result = await db.execute(
+            update(Agent)
+            .where(Agent.id == agent_id)
+            .values(activated_by_user_id=user_id, updated_at=datetime.now(timezone.utc))
+            .returning(Agent.id)
+        )
+        await db.flush()
+        return result.scalar_one_or_none() is not None
+
     async def get_expiring_ephemeral(
         self, db: AsyncSession, before: datetime
     ) -> Sequence[Agent]:

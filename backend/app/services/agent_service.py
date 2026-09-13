@@ -121,6 +121,7 @@ class AgentService:
         agent_id: str,
         org_id: str,
         actor_id: str,
+        activated_by_user_id: str,
         source_ip: Optional[str] = None,
     ) -> Agent:
         """
@@ -129,7 +130,10 @@ class AgentService:
         1. Validates agent is in PENDING state
         2. Calls SPIRE to get a SPIFFE ID assigned (workload identity)
         3. Moves agent to ACTIVE
-        4. Emits audit event
+        4. Records activated_by_user_id — the permanent human-authority
+           anchor for this agent's root tokens (Slice 11; see
+           models/agent.py's docstring and resolve_on_behalf_of below)
+        5. Emits audit event
         """
         causal_trace_id = str(uuid.uuid4())
 
@@ -150,6 +154,7 @@ class AgentService:
         # Update state
         await agent_repo.set_spiffe_id(db, agent_id, spiffe_id)
         await agent_repo.update_status(db, agent_id, AgentStatus.ACTIVE)
+        await agent_repo.set_activated_by(db, agent_id, activated_by_user_id)
 
         await audit_repo.append(
             org_id=org_id,
@@ -159,12 +164,138 @@ class AgentService:
             agent_id=agent_id,
             causal_trace_id=causal_trace_id,
             outcome="success",
-            details={"spiffe_id": spiffe_id},
+            details={"spiffe_id": spiffe_id, "activated_by_user_id": activated_by_user_id},
             source_ip=source_ip,
         )
 
         await db.refresh(agent)
         return agent
+
+    async def resolve_on_behalf_of(
+        self, db: AsyncSession, *, agent: Agent, requested_scopes: list[str]
+    ) -> Optional[str]:
+        """
+        Which human operator's authority a NEW token for this agent
+        should carry, if any. Called at every token-mint site
+        (api/token.py's /exchange, api/oauth.py's /token) — never
+        caller-supplied.
+
+        An active, unexpired OnBehalfOfGrant whose scopes cover the
+        request takes precedence over the agent's permanent
+        activated_by_user_id — a grant is how an operator can vouch for
+        a DIFFERENT human's authority than whoever originally activated
+        the agent, bounded and revocable, without touching that
+        permanent record. Falls back to activated_by_user_id, then
+        None (no human anchor at all — a legitimate state, not a gap
+        to paper over with a fabricated value).
+        """
+        from app.repositories.on_behalf_of_grant_repo import on_behalf_of_grant_repo
+
+        grants = await on_behalf_of_grant_repo.get_active_for_agent(db, agent.id)
+        requested = set(requested_scopes)
+        for grant in grants:
+            if requested <= set(grant.scopes):
+                return grant.granted_by_user_id
+        return agent.activated_by_user_id
+
+    async def grant_on_behalf_of(
+        self,
+        db: AsyncSession,
+        *,
+        agent_id: str,
+        org_id: str,
+        granted_by_user_id: str,
+        scopes: list[str],
+        ttl_seconds: int,
+        actor_id: str,
+    ):
+        """
+        The "minimal grant primitive": an operator vouches that this
+        agent's tokens should carry THEIR authority, for these scopes,
+        for ttl_seconds — distinct from agent-to-agent delegation
+        (DelegationGrant), and distinct from (doesn't overwrite) the
+        agent's permanent activated_by_user_id.
+        """
+        from datetime import timedelta
+        from app.models.on_behalf_of_grant import OnBehalfOfGrant
+
+        agent = await agent_repo.get_by_id_and_org(db, agent_id, org_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+        invalid_scopes = set(scopes) - set(agent.allowed_scopes or [])
+        if invalid_scopes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Requested scopes exceed agent's allowed scopes: {sorted(invalid_scopes)}"
+            )
+
+        grant = OnBehalfOfGrant(
+            id=str(uuid.uuid4()),
+            org_id=org_id,
+            agent_id=agent_id,
+            granted_by_user_id=granted_by_user_id,
+            scopes=scopes,
+            is_active=True,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds),
+        )
+        db.add(grant)
+        await db.flush()
+        await db.refresh(grant)
+
+        await audit_repo.append(
+            org_id=org_id,
+            action=AuditAction.ON_BEHALF_OF_GRANTED,
+            actor_type="user",
+            actor_id=actor_id,
+            agent_id=agent_id,
+            causal_trace_id=str(uuid.uuid4()),
+            outcome="success",
+            details={
+                "grant_id": grant.id,
+                "granted_by_user_id": granted_by_user_id,
+                "scopes": scopes,
+                "expires_at": grant.expires_at.isoformat(),
+            },
+        )
+        return grant
+
+    async def revoke_on_behalf_of(
+        self,
+        db: AsyncSession,
+        *,
+        grant_id: str,
+        org_id: str,
+        actor_id: str,
+        reason: str,
+    ) -> None:
+        """Immediately revoke an on-behalf-of grant — does not touch the agent's permanent activated_by_user_id."""
+        from sqlalchemy import update
+        from app.models.on_behalf_of_grant import OnBehalfOfGrant
+        from app.repositories.on_behalf_of_grant_repo import on_behalf_of_grant_repo
+
+        grant = await on_behalf_of_grant_repo.get_by_id_and_org(db, grant_id, org_id)
+        if not grant:
+            raise HTTPException(status_code=404, detail="On-behalf-of grant not found")
+
+        now = datetime.now(timezone.utc)
+        await db.execute(
+            update(OnBehalfOfGrant)
+            .where(OnBehalfOfGrant.id == grant_id)
+            .values(is_active=False, revoked_at=now, revocation_reason=reason)
+        )
+        await db.flush()
+
+        await audit_repo.append(
+            org_id=org_id,
+            action=AuditAction.ON_BEHALF_OF_REVOKED,
+            actor_type="user",
+            actor_id=actor_id,
+            agent_id=grant.agent_id,
+            causal_trace_id=str(uuid.uuid4()),
+            outcome="success",
+            details={"grant_id": grant_id, "reason": reason},
+        )
 
     async def jit_activate(
         self,

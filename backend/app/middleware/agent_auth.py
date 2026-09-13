@@ -152,6 +152,10 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             # the OAuth authorization_code flow with a resource=
             # parameter — see core/jwt.py's create_agent_access_token.
             "resource": payload.get("resource"),
+            # Which human operator's authority this token carries, if
+            # any — see core/jwt.py's on_behalf_of claim and
+            # agent_service.resolve_on_behalf_of.
+            "on_behalf_of": payload.get("on_behalf_of"),
         }
 
     async def _check_jti_revoked(self, jti: str) -> bool:

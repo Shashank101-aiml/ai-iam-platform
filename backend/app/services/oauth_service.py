@@ -36,10 +36,12 @@ from app.core.config import settings
 from app.core.security import verify_pkce_challenge
 from app.core.jwt import create_agent_access_token
 from app.core.revocation import get_redis_client, track_issued_jti
-from app.core.constants import PermissionScope, AgentStatus
+from app.core.constants import PermissionScope, AgentStatus, AuditAction
 from app.models.oauth_client import OAuthClient
 from app.repositories.oauth_client_repo import oauth_client_repo
 from app.repositories.agent_repo import agent_repo
+from app.repositories.audit_repo import audit_repo
+from app.services.agent_service import agent_service
 
 
 def _validate_redirect_uris(redirect_uris: list[str], application_type: str) -> None:
@@ -214,6 +216,7 @@ def _issuer() -> str:
 
 
 async def exchange_authorization_code(
+    db: AsyncSession,
     *,
     grant_type: str,
     code: str,
@@ -257,14 +260,37 @@ async def exchange_authorization_code(
         except ValueError:
             pass
 
+    agent = await agent_repo.get_by_id_and_org(db, code_data["agent_id"], code_data["org_id"])
+    on_behalf_of = await agent_service.resolve_on_behalf_of(
+        db, agent=agent, requested_scopes=code_data["scopes"]
+    )
+    trace_id = f"oauth:{uuid.uuid4()}"
+
     token_dict = create_agent_access_token(
         agent_id=code_data["agent_id"],
         org_id=code_data["org_id"],
         scopes=scopes,
-        causal_trace_id=f"oauth:{uuid.uuid4()}",
+        causal_trace_id=trace_id,
         resource=bound_resource,
+        on_behalf_of=on_behalf_of,
     )
     await track_issued_jti(f"agent:{code_data['agent_id']}:jtis", token_dict["jti"], token_dict["exp"])
+
+    await audit_repo.append(
+        org_id=code_data["org_id"],
+        action=AuditAction.CREDENTIAL_USED,
+        actor_type="agent",
+        actor_id=code_data["agent_id"],
+        agent_id=code_data["agent_id"],
+        causal_trace_id=trace_id,
+        outcome="success",
+        details={
+            "jti": token_dict["jti"],
+            "grant_type": "authorization_code",
+            "resource": bound_resource,
+            **({"on_behalf_of": on_behalf_of} if on_behalf_of else {}),
+        },
+    )
 
     return {
         "access_token": token_dict["token"],

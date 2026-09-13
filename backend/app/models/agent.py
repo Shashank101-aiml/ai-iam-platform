@@ -63,6 +63,19 @@ class Agent(Base, TimestampMixin):
     # tool_filter is optional; omitting it allows any tool on that server.
     mcp_bindings = Column(JSONB, nullable=True, default=list)
 
+    # Which human operator activated this agent — the anchor for "on
+    # behalf of which human" this agent's ROOT tokens trace back to
+    # (see core/jwt.py's on_behalf_of claim, resolved server-side in
+    # agent_service.resolve_on_behalf_of — never caller-supplied). Set
+    # once, at activation; an operator can separately vouch for an
+    # agent's tokens carrying a DIFFERENT human's authority, bounded by
+    # scope + TTL, via OnBehalfOfGrant — that's a deliberately distinct,
+    # revocable mechanism from this permanent activation-time anchor,
+    # not a replacement for it. None means this agent has no human
+    # anchor at all: a legitimate "acting purely as a service identity"
+    # state, not an error.
+    activated_by_user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+
     # Relationships
     organization = relationship("Organization", back_populates="agents")
     parent_agent = relationship("Agent", remote_side=[id], foreign_keys=[parent_agent_id])

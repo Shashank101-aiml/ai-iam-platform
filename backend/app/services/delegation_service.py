@@ -62,6 +62,7 @@ class DelegationService:
         delegating_agent_jti: Optional[str] = None,
         parent_trace_id: Optional[str] = None,
         ttl_seconds: int = 600,
+        on_behalf_of: Optional[str] = None,
     ) -> dict:
         """
         Issue a delegation grant from one agent to another.
@@ -70,6 +71,12 @@ class DelegationService:
         agent's own verified JWT claims (request.state.agent["scopes"])
         — never from a request body field the caller controls, or scope
         attenuation is just the client self-reporting its privileges.
+
+        on_behalf_of, likewise, must come from the delegating agent's
+        own verified token claims (request.state.agent["on_behalf_of"])
+        — never re-resolved here and never caller-supplied. Delegation
+        propagates the human anchor unchanged down the chain; it never
+        grants a NEW one a delegatee wouldn't otherwise have (Slice 11).
 
         delegating_agent_jti (also from the verified token) is how the
         real chain gets reconstructed: it's matched against
@@ -176,6 +183,7 @@ class DelegationService:
             scopes=token_scopes,
             causal_trace_id=causal_trace_id,
             current_depth=chain.depth,
+            on_behalf_of=on_behalf_of,
         )
 
         grant = DelegationGrant(
@@ -217,6 +225,7 @@ class DelegationService:
                 "approved_scopes": approved_scopes,
                 "delegation_depth": new_depth,
                 "expires_at": grant.expires_at.isoformat(),
+                "on_behalf_of": on_behalf_of,
             },
         )
 
@@ -227,6 +236,7 @@ class DelegationService:
             "scopes": approved_scopes,
             "delegation_depth": new_depth,
             "grant": grant,
+            "on_behalf_of": on_behalf_of,
         }
 
     async def _load_chain(

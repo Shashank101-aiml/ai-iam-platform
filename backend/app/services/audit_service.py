@@ -40,7 +40,21 @@ class AuditService:
                 "started_at": events[0].created_at.isoformat(),
                 "ended_at": events[-1].created_at.isoformat(),
             },
+            # Slice 11: "which human ultimately authorized this" — the
+            # first event in the trace (chronological — events are
+            # ordered by sequence_number.asc()) whose details carry an
+            # on_behalf_of claim. None means no event in this trace was
+            # minted carrying a human anchor at all — a legitimate
+            # "purely a service identity" trace, not a gap.
+            "originating_operator": self._find_originating_operator(events),
         }
+
+    def _find_originating_operator(self, events) -> Optional[str]:
+        for event in events:
+            on_behalf_of = (event.details or {}).get("on_behalf_of")
+            if on_behalf_of:
+                return on_behalf_of
+        return None
 
     async def get_agent_history(
         self,

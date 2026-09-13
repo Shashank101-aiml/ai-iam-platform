@@ -21,6 +21,7 @@ class AgentJwtResponse(BaseModel):
     scopes: List[str]
     causal_trace_id: str
     delegation_depth: int = 0
+    on_behalf_of: Optional[str] = None
 
 
 class TokenInspectResponse(BaseModel):

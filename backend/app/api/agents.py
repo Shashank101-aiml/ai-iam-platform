@@ -17,6 +17,11 @@ from app.schemas.agent import (
     AgentResponse,
 )
 from app.schemas.api_key import ApiKeyIssueRequest, ApiKeyIssueResponse, ApiKeySummaryResponse
+from app.schemas.on_behalf_of import (
+    OnBehalfOfGrantCreate,
+    OnBehalfOfGrantRevokeRequest,
+    OnBehalfOfGrantResponse,
+)
 from app.services.agent_service import agent_service
 from app.services.api_key_service import api_key_service
 from app.repositories.agent_repo import agent_repo
@@ -66,6 +71,7 @@ async def activate_agent(
         agent_id=agent_id,
         org_id=current_user.org_id,
         actor_id=f"user:{current_user.id}",
+        activated_by_user_id=current_user.id,
         source_ip=request.client.host if request.client else None,
     )
     await db.commit()
@@ -194,3 +200,55 @@ async def list_agent_keys(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return await api_key_repo.get_all_keys_for_agent(db, agent_id)
+
+
+@router.post(
+    "/{agent_id}/on-behalf-of-grants",
+    response_model=OnBehalfOfGrantResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def grant_on_behalf_of(
+    agent_id: str,
+    grant_in: OnBehalfOfGrantCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Vouch that this agent's tokens should carry the CALLING operator's
+    own authority, for the given scopes, for ttl_seconds — distinct
+    from agent-to-agent delegation and from (doesn't overwrite) the
+    agent's permanent activated_by_user_id. See
+    agent_service.resolve_on_behalf_of for how this is consulted at
+    token-mint time.
+    """
+    grant = await agent_service.grant_on_behalf_of(
+        db,
+        agent_id=agent_id,
+        org_id=current_user.org_id,
+        granted_by_user_id=current_user.id,
+        scopes=grant_in.scopes,
+        ttl_seconds=grant_in.ttl_seconds,
+        actor_id=f"user:{current_user.id}",
+    )
+    await db.commit()
+    return grant
+
+
+@router.post("/{agent_id}/on-behalf-of-grants/{grant_id}/revoke", status_code=status.HTTP_200_OK)
+async def revoke_on_behalf_of(
+    agent_id: str,
+    grant_id: str,
+    revoke_in: OnBehalfOfGrantRevokeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Immediately revoke an on-behalf-of grant."""
+    await agent_service.revoke_on_behalf_of(
+        db,
+        grant_id=grant_id,
+        org_id=current_user.org_id,
+        actor_id=f"user:{current_user.id}",
+        reason=revoke_in.reason,
+    )
+    await db.commit()
+    return {"grant_id": grant_id, "revoked": True}

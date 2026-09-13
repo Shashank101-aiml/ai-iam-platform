@@ -120,6 +120,7 @@ async def token(
     client_id: str = Form(...),
     code_verifier: str = Form(...),
     resource: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Authorization Code + PKCE grant, step 2. application/x-www-form-urlencoded
@@ -136,6 +137,7 @@ async def token(
     secret to present.
     """
     return await oauth_service.exchange_authorization_code(
+        db,
         grant_type=grant_type,
         code=code,
         redirect_uri=redirect_uri,

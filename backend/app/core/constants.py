@@ -41,6 +41,11 @@ class AuditAction(str, Enum):
     DELEGATION_REVOKED = "delegation.revoked"
     DELEGATION_USED = "delegation.used"
 
+    # On-behalf-of human authority grants (Slice 11) — distinct from
+    # agent-to-agent delegation above
+    ON_BEHALF_OF_GRANTED = "on_behalf_of.granted"
+    ON_BEHALF_OF_REVOKED = "on_behalf_of.revoked"
+
 
 class PermissionScope(str, Enum):
     """Scopes embedded in agent JWTs — fine-grained, not roles."""

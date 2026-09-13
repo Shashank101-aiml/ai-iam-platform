@@ -52,3 +52,4 @@ class DelegationTokenResponse(BaseModel):
     scopes: List[str]
     delegation_depth: int
     grant: DelegationGrantResponse
+    on_behalf_of: Optional[str] = None
