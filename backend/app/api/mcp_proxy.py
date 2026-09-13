@@ -34,6 +34,12 @@ async def execute_mcp_tool(
     """
     Execute an MCP tool subject to pre-execution ReBAC interception.
     Extracts agent identity and scopes from JWT (`request.state.agent`).
+
+    mcp_server_url is intentionally not part of the request — it's
+    resolved server-side from the agent's own mcp_bindings by
+    mcp_server_id (see mcp_proxy_service._resolve_mcp_binding), so an
+    agent can't redirect the proxy's outbound call to an arbitrary
+    address.
     """
     trace_id = exec_in.causal_trace_id or current_agent.get("causal_trace_id", "mcp:exec")
     result = await mcp_proxy_service.execute_tool(
@@ -41,7 +47,6 @@ async def execute_mcp_tool(
         agent_id=current_agent["agent_id"],
         org_id=current_agent["org_id"],
         mcp_server_id=exec_in.mcp_server_id,
-        mcp_server_url=exec_in.mcp_server_url,
         tool_name=tool_name,
         tool_args=exec_in.arguments,
         token_scopes=current_agent.get("scopes", []),
@@ -49,8 +54,7 @@ async def execute_mcp_tool(
         delegation_depth=current_agent.get("delegation_depth", 0),
         source_ip=request.client.host if request.client else None,
     )
-    await db.commit()
-    
+
     # Compute hashes for response DTO match
     args_hash = _hash_payload(exec_in.arguments)
     result_hash = _hash_payload(result["result"]) if result.get("result") is not None else ""

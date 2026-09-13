@@ -26,13 +26,20 @@ from app.models.organization import Organization
 from app.services.mcp_proxy_service import mcp_proxy_service
 
 
-async def _make_active_agent(db_session: AsyncSession, org: Organization, name: str, scopes: list[str]) -> Agent:
+async def _make_active_agent(
+    db_session: AsyncSession,
+    org: Organization,
+    name: str,
+    scopes: list[str],
+    mcp_bindings: list[dict] | None = None,
+) -> Agent:
     agent = Agent(
         id=str(uuid.uuid4()),
         org_id=org.id,
         name=name,
         status=AgentStatus.ACTIVE,
         allowed_scopes=scopes,
+        mcp_bindings=mcp_bindings or [],
     )
     db_session.add(agent)
     await db_session.commit()
@@ -48,7 +55,15 @@ async def test_delegation_over_http_reaches_agent_authenticated_route(
     db_session: AsyncSession,
     test_org: Organization,
 ):
-    delegatee = await _make_active_agent(db_session, test_org, "Delegatee Agent", ["tool:execute"])
+    delegatee = await _make_active_agent(
+        db_session,
+        test_org,
+        "Delegatee Agent",
+        ["tool:execute"],
+        mcp_bindings=[
+            {"server_id": "srv-1", "server_url": "http://mock-mcp:8080", "tool_filter": ["search_web"]},
+        ],
+    )
 
     # Issue and exchange a key for agent A (test_agent), the delegator.
     issue_resp = await client.post(
@@ -94,7 +109,6 @@ async def test_delegation_over_http_reaches_agent_authenticated_route(
             headers={"Authorization": agent_b_token},
             json={
                 "mcp_server_id": "srv-1",
-                "mcp_server_url": "http://mock-mcp:8080",
                 "arguments": {"q": "test"},
             },
         )

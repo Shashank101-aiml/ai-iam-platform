@@ -10,8 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class McpToolExecuteRequest(BaseModel):
+    # mcp_server_url is deliberately NOT a field here — the proxy resolves
+    # it server-side from the calling agent's own mcp_bindings by
+    # mcp_server_id. Accepting a URL from the caller would let any
+    # authenticated agent point the proxy's outbound request at an
+    # arbitrary address (SSRF), with the proxy's own network reachability.
     mcp_server_id: str = Field(..., min_length=1)
-    mcp_server_url: str = Field(..., min_length=5)
     arguments: Dict[str, Any] = Field(default_factory=dict)
     causal_trace_id: Optional[str] = None
 

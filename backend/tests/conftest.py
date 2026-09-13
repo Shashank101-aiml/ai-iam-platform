@@ -134,6 +134,9 @@ async def test_agent(db_session: AsyncSession, test_org: Organization) -> Agent:
         status=AgentStatus.ACTIVE,
         spiffe_id=f"spiffe://ai-iam.internal/ns/{test_org.id}/sa/security-sentinel",
         allowed_scopes=["audit:read", "threat:mitigate", "tool:execute"],
+        mcp_bindings=[
+            {"server_id": "srv-1", "server_url": "http://mock-mcp:8080", "tool_filter": ["search_web"]},
+        ],
     )
     db_session.add(agent)
     await db_session.commit()

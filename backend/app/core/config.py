@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     # Audit
     AUDIT_HASH_ALGORITHM: str = "sha256"   # For append-only chain integrity
 
+    # MCP proxy — bounding the blast radius of a slow, wedged, or
+    # malicious/compromised downstream MCP server. mcp_server_url is never
+    # taken from the caller (see mcp_proxy_service._resolve_mcp_binding) —
+    # these settings bound what happens once the proxy calls a URL it
+    # resolved itself.
+    MCP_CALL_TIMEOUT_SECONDS: float = 30.0
+    MCP_MAX_RESPONSE_BYTES: int = 1_048_576  # 1 MiB — results are hashed, never rendered; no legitimate tool needs more
+    MCP_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5  # consecutive failures before a server is short-circuited
+    MCP_CIRCUIT_BREAKER_COOLDOWN_SECONDS: float = 30.0
+
     class Config:
         env_file = ".env"
         case_sensitive = True

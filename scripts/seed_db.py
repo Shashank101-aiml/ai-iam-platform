@@ -97,7 +97,7 @@ async def seed() -> None:
             max_delegation_depth=5,
             is_ephemeral=False,
             allowed_scopes=["audit:read", "tool:execute", "threat:mitigate", "agent:delegate"],
-            mcp_bindings=[{"server": "security-mcp", "url": "http://security-mcp:8080"}],
+            mcp_bindings=[{"server_id": "security-mcp", "server_url": "http://security-mcp:8080"}],
         )
         db.add(supervisor)
         await db.flush()
@@ -113,7 +113,7 @@ async def seed() -> None:
             max_delegation_depth=2,
             is_ephemeral=False,
             allowed_scopes=["tool:execute"],
-            mcp_bindings=[{"server": "data-mcp", "url": "http://data-mcp:8080"}],
+            mcp_bindings=[{"server_id": "data-mcp", "server_url": "http://data-mcp:8080"}],
         )
         db.add(sub_agent)
         await db.flush()

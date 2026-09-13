@@ -52,8 +52,15 @@ class Agent(Base, TimestampMixin):
     # Stored as PostgreSQL array for indexed lookup
     allowed_scopes = Column(ARRAY(String), nullable=False, default=list)
 
-    # MCP server bindings — which MCP servers this agent can connect to
-    # [{"server_id": "...", "tool_filter": ["search_web", "read_file"]}]
+    # MCP server bindings — which MCP servers this agent can connect to.
+    # Operator-authored (set via the agent create/update routes, never by
+    # the agent itself), which is what makes server_url here trustworthy:
+    # mcp_proxy_service resolves the real MCP server URL from THIS field
+    # by server_id rather than accepting a URL in the tool-call request
+    # body, so a compromised or malicious agent can't redirect the proxy's
+    # outbound call to an arbitrary address (SSRF).
+    # [{"server_id": "...", "server_url": "https://...", "tool_filter": ["search_web", "read_file"]}]
+    # tool_filter is optional; omitting it allows any tool on that server.
     mcp_bindings = Column(JSONB, nullable=True, default=list)
 
     # Relationships

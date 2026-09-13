@@ -64,7 +64,6 @@ async def test_full_credential_exchange_path_reaches_agent_authenticated_route(
             headers={"Authorization": agent_token},
             json={
                 "mcp_server_id": "srv-1",
-                "mcp_server_url": "http://mock-mcp:8080",
                 "arguments": {"q": "test"},
             },
         )
