@@ -16,10 +16,19 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+from app.core.config import settings
+from app.core.logging_config import configure_logging
+
+# Called BEFORE app.db.session is imported below — that module creates
+# its engines at IMPORT time, and app/db/session.py's own comment on
+# `echo=False` explains why SQL logging is routed through this call's
+# sql_echo flag instead of SQLAlchemy's echo= shortcut.
+configure_logging(sql_echo=settings.DEBUG)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.core.config import settings
 from app.core.jwt import verify_rs256_keypair_loadable
 from app.core.permissions import verify_opa_reachable
 from app.core.revocation import verify_redis_reachable
@@ -150,8 +159,9 @@ def create_app() -> FastAPI:
     # empty prefix here combined with that empty path is invalid and
     # FastAPI refuses to construct the app at all ("Prefix and path cannot
     # be both empty"). "/health" matches what AgentAuthMiddleware's
-    # EXCLUDED_PATHS already assumes; reconciling this against the
-    # Dockerfile's /api/v1/health probe is tracked separately.
+    # EXCLUDED_PATHS already assumes, and — since Slice 14 — what the
+    # Dockerfile's own HEALTHCHECK actually probes too (it used to probe
+    # /api/v1/health, a path that never existed).
     app.include_router(health.router, prefix="/health", tags=["health"])
     app.include_router(auth.router, prefix=f"{prefix}/auth", tags=["auth"])
     app.include_router(organizations.router, prefix=f"{prefix}/organizations", tags=["organizations"])
@@ -165,6 +175,18 @@ def create_app() -> FastAPI:
     app.include_router(oauth.router, prefix=f"{prefix}/oauth", tags=["oauth"])
     # No prefix — RFC 8414/9728 require these at a fixed root-level path.
     app.include_router(well_known.router, tags=["discovery"])
+
+    # /metrics: generic HTTP request-count/latency histograms (by route,
+    # method, status code) from the instrumentator itself, PLUS the
+    # domain counters/histograms in core/metrics.py, which get pulled
+    # into the same default Prometheus registry the instrumentator
+    # exposes just by being instantiated anywhere in the process — no
+    # separate wiring needed for those. Unauthenticated, matching the
+    # standard Prometheus scrape convention (a scraper on the internal
+    # network, not a browser); AgentAuthMiddleware doesn't gate this
+    # path either way since _requires_agent_auth only matches specific
+    # agent-facing prefixes /metrics isn't one of.
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
     return app
 

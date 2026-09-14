@@ -12,7 +12,20 @@ engine = create_async_engine(
     DATABASE_URL,
     pool_size=settings.DATABASE_POOL_SIZE,
     max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    echo=settings.DEBUG,
+    # NOT settings.DEBUG — SQLAlchemy's echo=True is a logging SHORTCUT
+    # that self-installs its own plain-text StreamHandler directly onto
+    # the "sqlalchemy.engine.Engine" logger the moment it finds that
+    # SPECIFIC logger has no handlers of its own — a check against that
+    # child logger's own (always-empty-by-default) handler list, not
+    # root's, so nothing about when/whether core.logging_config's
+    # configure_logging() has already run prevents it. Confirmed live
+    # (Slice 14): every SQL log line was emitted TWICE — once via
+    # SQLAlchemy's own plain-text handler, once via propagation to
+    # root's structured JSON one. echo=False here; configure_logging()
+    # instead sets this same logger's LEVEL directly, so SQL statements
+    # still show up in DEBUG mode, but through the app's one JSON
+    # handler via ordinary propagation, not a second competing one.
+    echo=False,
     future=True,
 )
 
@@ -76,7 +89,8 @@ AUDIT_DATABASE_URL = _build_audit_database_url()
 audit_engine = create_async_engine(
     AUDIT_DATABASE_URL,
     poolclass=NullPool,
-    echo=settings.DEBUG,
+    # NOT settings.DEBUG — see the `engine` definition above for why.
+    echo=False,
     future=True,
     connect_args={} if settings.AUDIT_DB_SSL else {"ssl": False},
 )

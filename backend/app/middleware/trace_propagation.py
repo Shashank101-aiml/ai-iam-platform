@@ -22,6 +22,8 @@ import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi import Request
 
+from app.core.logging_config import causal_trace_id_var
+
 
 TRACE_HEADER = "X-Trace-Id"
 RESPONSE_TRACE_HEADER = "X-Trace-Id"
@@ -39,6 +41,13 @@ class TracePropagationMiddleware(BaseHTTPMiddleware):
 
         # Bind to request state — services read from here
         request.state.causal_trace_id = trace_id
+        # Also bind to the contextvar every log line reads (Slice 14) —
+        # a separate mechanism from request.state because log calls deep
+        # in a service have no Request object to read state off of.
+        # BaseHTTPMiddleware runs dispatch() in a spawned task, so this
+        # context is naturally isolated per request/task; no manual
+        # reset is needed the way it would be with a shared object.
+        causal_trace_id_var.set(trace_id)
 
         response = await call_next(request)
 

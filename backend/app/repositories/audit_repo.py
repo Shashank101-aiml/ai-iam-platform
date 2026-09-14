@@ -28,6 +28,7 @@ from app.models.audit_log import AuditLog
 from app.core.security import compute_entry_hash, AUDIT_CHAIN_GENESIS
 from app.core.constants import AuditAction
 from app.core.config import settings
+from app.core.metrics import AUDIT_CHAIN_VERIFY_DURATION_SECONDS
 from app.db.session import AuditSessionLocal
 from app.repositories.base_repo import BaseRepository
 
@@ -172,37 +173,43 @@ class AuditRepository(BaseRepository[AuditLog]):
         verification job (see worker/audit_verifier.py) run against an
         org with millions of entries in fixed memory instead of however
         much RAM the full result set happens to need.
+
+        The whole call is timed into AUDIT_CHAIN_VERIFY_DURATION_SECONDS
+        (Slice 14) — one instrumentation point covers both the periodic
+        worker and the on-demand GET /audit/verify endpoint, since both
+        call this same method rather than duplicating the replay logic.
         """
-        batch_size = batch_size or settings.AUDIT_VERIFY_BATCH_SIZE
-        stmt = (
-            select(AuditLog)
-            .where(AuditLog.org_id == org_id)
-            .order_by(AuditLog.sequence_number.asc())
-            .execution_options(yield_per=batch_size)
-        )
+        with AUDIT_CHAIN_VERIFY_DURATION_SECONDS.time():
+            batch_size = batch_size or settings.AUDIT_VERIFY_BATCH_SIZE
+            stmt = (
+                select(AuditLog)
+                .where(AuditLog.org_id == org_id)
+                .order_by(AuditLog.sequence_number.asc())
+                .execution_options(yield_per=batch_size)
+            )
 
-        prev_hash = AUDIT_CHAIN_GENESIS
-        checked = 0
-        result = await db.stream_scalars(stmt)
-        async for entry in result:
-            content = json.dumps({
-                "org_id": entry.org_id,
-                "action": entry.action,
-                "actor_id": entry.actor_id,
-                "causal_trace_id": entry.causal_trace_id,
-                "outcome": entry.outcome,
-                "sequence_number": entry.sequence_number,
-                "details": entry.details or {},
-            }, sort_keys=True)
+            prev_hash = AUDIT_CHAIN_GENESIS
+            checked = 0
+            result = await db.stream_scalars(stmt)
+            async for entry in result:
+                content = json.dumps({
+                    "org_id": entry.org_id,
+                    "action": entry.action,
+                    "actor_id": entry.actor_id,
+                    "causal_trace_id": entry.causal_trace_id,
+                    "outcome": entry.outcome,
+                    "sequence_number": entry.sequence_number,
+                    "details": entry.details or {},
+                }, sort_keys=True)
 
-            expected_hash = compute_entry_hash(content, prev_hash)
-            checked += 1
-            if expected_hash != entry.entry_hash:
-                return False, entry.sequence_number, checked
+                expected_hash = compute_entry_hash(content, prev_hash)
+                checked += 1
+                if expected_hash != entry.entry_hash:
+                    return False, entry.sequence_number, checked
 
-            prev_hash = entry.entry_hash
+                prev_hash = entry.entry_hash
 
-        return True, None, checked
+            return True, None, checked
 
     async def get_by_trace(
         self, db: AsyncSession, causal_trace_id: str, org_id: str

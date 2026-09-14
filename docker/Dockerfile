@@ -54,7 +54,15 @@ USER aiiam
 
 EXPOSE 8000
 
+# main.py mounts health.router at the root-level "/health" (not under
+# /api/v1 — see its comment there for why: health.router's liveness
+# route is defined as @router.get("") and FastAPI refuses an empty
+# prefix + empty path combo, plus AgentAuthMiddleware's EXCLUDED_PATHS
+# already assumes "/health" unprefixed). This used to probe
+# /api/v1/health, a path that has never existed — every prior
+# container was reporting unhealthy from the moment it passed
+# --start-period, on a path that 404s (Slice 14).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

@@ -17,6 +17,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
+from app.core.metrics import CREDENTIAL_ROTATIONS_TOTAL
 from app.db.session import AsyncSessionLocal
 from app.repositories.api_key_repo import api_key_repo
 from app.services.api_key_service import api_key_service
@@ -51,6 +52,7 @@ async def rotate_expiring_keys() -> dict:
                         "new_key_id": result["key_id"],
                         "agent_id": key.agent_id,
                     })
+                    CREDENTIAL_ROTATIONS_TOTAL.inc()
                     logger.info(
                         f"Rotated key {key.key_id} → {result['key_id']} "
                         f"for agent {key.agent_id}"

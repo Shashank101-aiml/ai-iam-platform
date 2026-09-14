@@ -49,6 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
 from app.core.config import settings
+from app.core.metrics import MCP_TOOL_DENIALS_TOTAL
 from app.models.mcp_session import McpSession
 from app.core.constants import AuditAction
 from app.core.permissions import check_permission, PermissionDeniedError
@@ -577,6 +578,7 @@ class McpProxyService:
         is a genuinely distinct failure mode worth being able to query/
         meter separately from an ordinary policy/tool_filter block.
         """
+        MCP_TOOL_DENIALS_TOTAL.labels(policy_decision=policy_decision).inc()
         await self._record_session(
             db,
             session_id=session_id,
