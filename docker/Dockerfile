@@ -1,5 +1,13 @@
 # Multi-stage production Dockerfile for AI-IAM Platform Backend
-FROM python:3.11-slim as builder
+#
+# Both stages pin python:3.11-slim by digest, not just the tag (Slice
+# 15) — a tag can be silently repointed at a different underlying image
+# upstream at any time; a digest is the actual content, immune to that.
+# Re-resolve deliberately (`docker pull python:3.11-slim && docker
+# inspect ... RepoDigests`) to pick up a real security patch — don't
+# let the base image drift silently, but don't let it drift by accident
+# either.
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534 as builder
 
 WORKDIR /app
 
@@ -18,7 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 
-FROM python:3.11-slim as runtime
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534 as runtime
 
 WORKDIR /app
 

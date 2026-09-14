@@ -22,6 +22,7 @@ from app.services.mcp_proxy_service import mcp_proxy_service
 from app.core.jwt import create_agent_access_token, verify_agent_token, extract_jti
 from app.core.constants import PermissionScope, AuditAction
 from app.core.config import settings
+from app.core.rate_limit import rate_limit_token_exchange
 from app.core.revocation import track_issued_jti
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
@@ -31,7 +32,7 @@ from app.models.user import User
 router = APIRouter()
 
 
-@router.post("/exchange", response_model=AgentJwtResponse)
+@router.post("/exchange", response_model=AgentJwtResponse, dependencies=[Depends(rate_limit_token_exchange)])
 async def exchange_token(
     token_in: TokenExchangeRequest,
     request: Request,

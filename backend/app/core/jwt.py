@@ -256,3 +256,40 @@ def verify_rs256_keypair_loadable() -> None:
         audience="ai-iam-platform",
         issuer=f"https://{settings.SPIFFE_TRUST_DOMAIN}",
     )
+
+
+# The literal fallback docker-compose.yml substitutes for JWT_SECRET_KEY
+# whenever the host environment doesn't set one — see
+# verify_jwt_secret_not_default below. A set, not a single string, so a
+# future second placeholder (a rotated "old default" documented in a
+# README, say) can be added without changing the check's shape.
+_KNOWN_DEFAULT_JWT_SECRETS = {"default_super_secret_jwt_key_256_bit_string"}
+
+
+def verify_jwt_secret_not_default(*, debug: bool) -> None:
+    """
+    Refuse to boot on the well-known default JWT_SECRET_KEY (Slice 15).
+
+    JWT_SECRET_KEY has no Python-level default in Settings (see this
+    module's verify_rs256_keypair_loadable docstring) — but docker-
+    compose.yml's local-dev convenience fallback
+    (`${JWT_SECRET_KEY:-default_super_secret_jwt_key_256_bit_string}`)
+    substitutes a well-known literal string into the container's own
+    environment whenever the HOST hasn't set one, which pydantic
+    accepts as "provided" with no way to tell it apart from a real
+    secret.
+
+    Gated by `debug`, matching this app's existing convention (CORS,
+    docs_url) for "this is a local/dev environment, be more lenient" —
+    a real deployment runs with DEBUG=false and MUST supply its own
+    secret, or refuse to start rather than sign every operator token
+    with a value anyone who has ever read this repository's
+    docker-compose.yml already knows.
+    """
+    if not debug and settings.JWT_SECRET_KEY in _KNOWN_DEFAULT_JWT_SECRETS:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is set to a well-known default value. Set a "
+            "real, unique secret (e.g. from Vault, a cloud KMS, or your "
+            "orchestrator's native secrets store) before starting outside "
+            "of DEBUG mode."
+        )

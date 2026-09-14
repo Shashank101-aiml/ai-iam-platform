@@ -6,6 +6,7 @@ Facilitates human login and session management for the dashboard interface.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import rate_limit_login
 from app.db.session import get_db
 from app.schemas.user import UserCreate, UserLogin, UserResponse, TokenPayload
 from app.services.auth_service import auth_service
@@ -15,7 +16,7 @@ from app.models.user import User
 router = APIRouter()
 
 
-@router.post("/login", response_model=TokenPayload)
+@router.post("/login", response_model=TokenPayload, dependencies=[Depends(rate_limit_login)])
 async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     """
     Authenticate human operator with email and password, returning an HS256 JWT.

@@ -1,6 +1,12 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # Pinned by digest (Slice 15), not just the ":16-alpine" tag — a tag
+    # can be silently repointed at a different image upstream at any
+    # time; a digest is the actual content, immune to that. Re-resolve
+    # deliberately (`docker pull postgres:16-alpine && docker inspect
+    # ... RepoDigests`) to pick up a real security patch — don't let it
+    # drift silently, but don't let it drift accidentally either.
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     container_name: aiiam_postgres
     restart: always
     environment:
@@ -31,7 +37,10 @@ services:
     # can't tell an OPA that's up from one whose HTTP layer is wedged —
     # but it is honest about what this image can verify, and it's enough
     # to gate `depends_on: condition: service_healthy` correctly.
-    image: openpolicyagent/opa:latest-debug
+    # Pinned by digest (Slice 15) — see the postgres service's comment
+    # above for why. "latest-debug" as a TAG would otherwise silently
+    # point at a different actual image the next time it's re-pulled.
+    image: openpolicyagent/opa:latest-debug@sha256:f37df2fabfe6e3d5f62579b21dbba2c4054738c3e699dac5bf4521b1370494f8
     container_name: aiiam_opa
     restart: always
     command:
@@ -62,7 +71,8 @@ services:
     # healthcheck can be a genuine PING rather than a port-bound proxy
     # check (contrast with the OPA service above, which has no HTTP
     # client available at all).
-    image: redis:7-alpine
+    # Pinned by digest (Slice 15) — see the postgres service's comment above.
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     container_name: aiiam_redis
     restart: always
     ports:
@@ -124,15 +134,45 @@ services:
       - ../backend/keys:/app/backend/keys:ro
     ports:
       - "8000:8000"
+    # Hardening (Slice 15): the app writes nothing to its own container
+    # filesystem at runtime — audit goes to Postgres, logs go to
+    # stdout, PYTHONDONTWRITEBYTECODE=1 already stops .pyc writes — so a
+    # read-only root filesystem costs nothing and closes off writing a
+    # webshell/backdoor into a running container as an attack primitive
+    # even after some other compromise. tmpfs gives the small amount of
+    # /tmp scratch space Python's stdlib itself sometimes wants (e.g.
+    # tempfile) without punching a real filesystem hole for it.
+    # cap_drop/no-new-privileges are the standard cheap Docker hardening
+    # pair — this process needs no Linux capabilities at all and must
+    # never be able to gain more privilege than it started with (e.g.
+    # via a setuid binary), and it already runs as non-root (see the
+    # Dockerfile's USER aiiam).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # --workers 4, not --reload (Slice 15): --reload's file-watching has
+    # no place outside active local editing, and this compose file is
+    # meant to reflect a real deployment topology now, matching the
+    # Dockerfile's own CMD. Running multiple workers here is also what
+    # actually exercises the credential-rotator / audit-verifier
+    # advisory-lock fix under the real failure condition it fixes —
+    # under a single worker (the old --reload setup), the "4 processes
+    # racing to rotate the same keys" bug could never have manifested
+    # in this environment in the first place.
     command: >
       bash -c "
         python -m alembic upgrade head &&
         python ../scripts/seed_db.py &&
-        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
       "
 
   frontend:
-    image: node:20-alpine
+    # Pinned by digest (Slice 15) — see the postgres service's comment above.
+    image: node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
     container_name: aiiam_frontend
     working_dir: /app/frontend
     volumes:

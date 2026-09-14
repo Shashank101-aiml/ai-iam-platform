@@ -18,23 +18,48 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from app.core.metrics import CREDENTIAL_ROTATIONS_TOTAL
+from app.core.worker_lock import try_acquire
 from app.db.session import AsyncSessionLocal
 from app.repositories.api_key_repo import api_key_repo
 from app.services.api_key_service import api_key_service
 
 logger = logging.getLogger(__name__)
 
+_ROTATE_LOCK = "aiiam:credential_rotator:rotate_expiring_keys"
+_REAPER_LOCK = "aiiam:credential_rotator:decommission_ephemeral"
+
 
 async def rotate_expiring_keys() -> dict:
     """
     Find and rotate all keys within the rotation window.
     Returns a summary of what was rotated.
+
+    Guarded by a Postgres advisory lock (Slice 15) — a real deployment
+    runs multiple web worker processes (this project's own Dockerfile
+    CMD: `--workers 4`), each running its own copy of this loop with no
+    other coordination. Without this, every process would rotate the
+    SAME keys on the SAME schedule, racing each other. Only the process
+    whose transaction wins the lock for this cycle does anything; every
+    other process's call returns immediately with rotated_count=0 and
+    skipped=True, never having touched a single key.
     """
     rotated = []
     errors = []
 
     async with AsyncSessionLocal() as db:
         try:
+            if not await try_acquire(db, _ROTATE_LOCK):
+                logger.info("Credential rotator: another worker process holds this cycle's lock — skipping")
+                await db.commit()  # releases nothing (we hold no lock) — just closes the transaction cleanly
+                return {
+                    "rotated_count": 0,
+                    "error_count": 0,
+                    "rotated": [],
+                    "errors": [],
+                    "skipped": True,
+                    "ran_at": datetime.now(timezone.utc).isoformat(),
+                }
+
             keys = await api_key_repo.get_keys_needing_rotation(db)
             logger.info(f"Credential rotator: found {len(keys)} keys needing rotation")
 
@@ -73,6 +98,7 @@ async def rotate_expiring_keys() -> dict:
         "error_count": len(errors),
         "rotated": rotated,
         "errors": errors,
+        "skipped": False,
         "ran_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -90,6 +116,16 @@ async def decommission_expired_ephemeral_agents() -> dict:
 
     async with AsyncSessionLocal() as db:
         try:
+            if not await try_acquire(db, _REAPER_LOCK):
+                logger.info("Ephemeral reaper: another worker process holds this cycle's lock — skipping")
+                await db.commit()
+                return {
+                    "decommissioned_count": 0,
+                    "error_count": 0,
+                    "skipped": True,
+                    "ran_at": datetime.now(timezone.utc).isoformat(),
+                }
+
             now = datetime.now(timezone.utc)
             expired = await agent_repo.get_expiring_ephemeral(db, before=now)
             logger.info(f"Ephemeral reaper: found {len(expired)} agents to decommission")
@@ -118,6 +154,7 @@ async def decommission_expired_ephemeral_agents() -> dict:
     return {
         "decommissioned_count": len(decommissioned),
         "error_count": len(errors),
+        "skipped": False,
         "ran_at": datetime.now(timezone.utc).isoformat(),
     }
 

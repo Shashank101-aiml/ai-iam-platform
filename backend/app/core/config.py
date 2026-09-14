@@ -114,6 +114,28 @@ class Settings(BaseSettings):
     # code sitting in a browser history.
     OAUTH_AUTHORIZATION_CODE_TTL_SECONDS: int = 120
 
+    # CORS. Never combine a wildcard origin with allow_credentials=True
+    # (main.py) — that combination is invalid per the Fetch/CORS spec,
+    # and every real browser refuses to honor the resulting
+    # Access-Control-Allow-Origin: * header when credentials are also
+    # requested, so allow_origins=["*"] + allow_credentials=True was
+    # never actually working for a credentialed cross-origin request in
+    # the first place — it just failed silently in the browser instead
+    # of the server. This must always be a real, explicit origin list.
+    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
+
+    # Rate limiting (Slice 15) — /auth/login and /token/exchange both do
+    # bcrypt work (BCRYPT_ROUNDS=12, deliberately slow) on completely
+    # unauthenticated input; without a limit either is a cheap CPU-
+    # exhaustion vector. Enforced in core/rate_limit.py against Redis
+    # (already a hard dependency) rather than in-process memory — an
+    # in-process counter would only bound each of the 4 uvicorn worker
+    # processes independently, letting a client get up to 4x the
+    # intended limit depending on which worker happened to handle each
+    # request.
+    RATE_LIMIT_LOGIN_PER_MINUTE: int = 10
+    RATE_LIMIT_TOKEN_EXCHANGE_PER_MINUTE: int = 60
+
     # Task-scoped tokens (Slice 12) — Stacklok's "ambient authority"
     # problem: a bearer token today authorizes ANY tool call its scopes
     # allow for its whole 15-minute lifetime, not just the one call it

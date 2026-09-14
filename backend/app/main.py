@@ -29,7 +29,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.core.jwt import verify_rs256_keypair_loadable
+from app.core.jwt import verify_rs256_keypair_loadable, verify_jwt_secret_not_default
 from app.core.permissions import verify_opa_reachable
 from app.core.revocation import verify_redis_reachable
 from app.middleware.agent_auth import AgentAuthMiddleware
@@ -45,6 +45,10 @@ async def lifespan(app: FastAPI):
 
     # ── Startup ──────────────────────────────────────────────────────────────
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+
+    # Refuse to boot on the well-known default JWT_SECRET_KEY — see
+    # core/jwt.py's verify_jwt_secret_not_default docstring.
+    verify_jwt_secret_not_default(debug=settings.DEBUG)
 
     # Verify DB connectivity
     try:
@@ -135,9 +139,17 @@ def create_app() -> FastAPI:
     )
 
     # ── Middleware (outermost first) ──────────────────────────────────────────
+    # NEVER allow_origins=["*"] here — combined with allow_credentials=
+    # True (needed for the dashboard's session cookie/Authorization
+    # header) that's invalid per the Fetch/CORS spec, and every real
+    # browser refuses to honor it, so the wildcard was never actually
+    # granting cross-origin access in the first place — it just failed
+    # silently client-side instead of being an honest, explicit list.
+    # settings.CORS_ALLOWED_ORIGINS defaults to the local frontend dev
+    # origin; set it to the real deployed dashboard origin(s) in prod.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if settings.DEBUG else ["https://your-dashboard.com"],
+        allow_origins=settings.CORS_ALLOWED_ORIGINS,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
