@@ -5,7 +5,7 @@ consistent, typed database interaction patterns across the platform.
 """
 
 from typing import TypeVar, Generic, Optional, Sequence, Type
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 ModelType = TypeVar("ModelType")

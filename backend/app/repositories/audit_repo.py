@@ -19,9 +19,8 @@ Enforces two guarantees that no other layer should be able to bypass:
 
 import json
 from typing import Optional, Sequence
-from datetime import datetime, timezone
 
-from sqlalchemy import select, func, text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog

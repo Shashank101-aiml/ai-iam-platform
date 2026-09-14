@@ -5,13 +5,12 @@ full causal trace trees (`get_trace`), and running cryptographic verification (`
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.schemas.audit_log import (
     AuditLogResponse,
-    CausalTraceTreeResponse,
     IntegrityVerificationReport,
 )
 from app.services.audit_service import audit_service

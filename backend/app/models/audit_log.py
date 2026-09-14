@@ -24,12 +24,11 @@ This is the most security-critical model. Design properties:
 """
 
 from sqlalchemy import (
-    Column, String, Integer, ForeignKey, Text, Index, CheckConstraint
+    Column, String, Integer, ForeignKey, Index
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, generate_uuid
-from app.core.constants import AuditAction
 
 
 class AuditLog(Base, TimestampMixin):

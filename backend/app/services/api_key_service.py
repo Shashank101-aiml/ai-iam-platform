@@ -17,7 +17,6 @@ Verification flow (every API request):
 """
 
 import uuid
-import hashlib
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -25,15 +24,14 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from app.models.api_key import ApiKey
-from app.core.constants import AuditAction, PermissionScope, CredentialType
+from app.core.constants import AuditAction, CredentialType
 from app.core.security import (
     generate_api_key,
     generate_key_id,
     verify_api_key,
-    should_rotate_key,
     is_key_expired,
 )
 from app.core.config import settings

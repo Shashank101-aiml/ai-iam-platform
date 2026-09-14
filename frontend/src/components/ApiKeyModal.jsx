@@ -116,7 +116,7 @@ export default function ApiKeyModal({ agent, onClose }) {
               >
                 <option value={30}>30 Days (Standard Worker)</option>
                 <option value={90}>90 Days (Production Supervisor)</option>
-                <option value={365}>365 Days (Long-Lived Attestation)</option>
+                <option value={365}>365 Days (Long-Lived Credential)</option>
               </select>
             </div>
 

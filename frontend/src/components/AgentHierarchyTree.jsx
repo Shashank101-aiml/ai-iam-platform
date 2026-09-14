@@ -22,7 +22,7 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
           <h2 className="font-outfit" style={{ fontSize: '1.75rem', fontWeight: 700, color: '#fff' }}>
-            Autonomous Agent Hierarchy & Attestation
+            Autonomous Agent Hierarchy
           </h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
             Two-Phase Workload Identity Lifecycle (`PENDING` $\rightarrow$ `ACTIVE`) with Zero-Downtime Key Rotation
@@ -89,7 +89,8 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
                   {agent.description || 'No description provided.'}
                 </p>
 
-                {/* SPIFFE Attestation SVID Card */}
+                {/* Format-checked identifier, not a cryptographic attestation
+                    — see backend/app/core/spiffe.py's module docstring (Slice 16). */}
                 <div
                   style={{
                     background: 'rgba(6, 11, 25, 0.7)',
@@ -102,11 +103,11 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
                     <Shield size={14} color="#00f5ff" />
                     <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
-                      SPIFFE Workload SVID Attestation
+                      SPIFFE-style Identifier
                     </span>
                   </div>
                   <div className="font-mono" style={{ fontSize: '0.75rem', color: agent.spiffe_id ? '#00f5ff' : '#64748b', wordBreak: 'break-all' }}>
-                    {agent.spiffe_id || 'Not provisioned (Awaiting Attestation Phase)'}
+                    {agent.spiffe_id || 'Not assigned (activate the agent to assign one)'}
                   </div>
                 </div>
 

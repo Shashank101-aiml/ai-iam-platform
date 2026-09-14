@@ -5,7 +5,7 @@ ReBAC rules via Open Policy Agent, hashes arguments (`_hash_payload`), and recor
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, status, Request, HTTPException
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db

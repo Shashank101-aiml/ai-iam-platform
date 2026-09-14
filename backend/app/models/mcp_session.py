@@ -13,9 +13,8 @@ entry for this same action, so you get a full picture:
   JWT (who) → audit_log (what decision) → mcp_session (what happened)
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text, Index
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, generate_uuid
 
 

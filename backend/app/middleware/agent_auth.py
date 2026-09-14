@@ -121,7 +121,7 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
                 status_code=401,
                 detail={"error": "invalid_claims", "detail": str(e)}
             )
-        except JWTError as e:
+        except JWTError:
             raise HTTPException(
                 status_code=401,
                 detail={"error": "invalid_token", "detail": "Token verification failed"}

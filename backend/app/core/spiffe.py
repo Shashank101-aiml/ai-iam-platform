@@ -1,28 +1,35 @@
 """
-SPIFFE/SPIRE workload identity integration.
+SPIFFE-style agent identifiers.
 
-SPIFFE (Secure Production Identity Framework for Everyone) issues
-cryptographic identities to workloads — in our case, AI agents.
+HONEST SCOPE (Slice 16): this module does NOT perform SPIFFE/SPIRE
+workload attestation. There is no SPIRE server, no X.509 SVID, no cert
+chain, and nothing here is cryptographically verified against a trust
+bundle. What actually exists is a SPIFFE-shaped URI string —
 
-Why this matters vs plain API keys:
-- API key: "here is a secret string, prove you have it"
-- SPIFFE SVID: "here is a cryptographically signed X.509 cert tied
-  to YOUR workload identity, short-lived, auto-rotated by SPIRE"
+    spiffe://<trust-domain>/ns/<org_id>/sa/<agent_id>
 
-A SPIFFE Verifiable Identity Document (SVID) looks like:
-  spiffe://ai-iam.internal/ns/acme/sa/agent-uuid
+— used purely as a structured, collision-resistant, human-readable
+identifier (org maps to namespace, agent to service account, matching
+the SPIFFE Kubernetes convention for readability/interop with tooling
+that expects this shape). parse_spiffe_id validates that FORMAT and
+trust-domain match; it proves nothing about who is presenting it.
 
-(namespace/service-account, matching the SPIFFE Kubernetes convention
-this platform's ID scheme follows — org maps to namespace, agent to
-service account.)
+The actual cryptographic trust boundary in this platform is the RS256
+JWT (see core/jwt.py) issued at token exchange — that's what's signed,
+short-lived, and verified on every request. This module's job ends at
+generating and format-checking an identifier string that gets carried
+inside that JWT and the database, nothing more.
 
-This module:
-1. Generates the SPIFFE ID (URI) for a registered agent
-2. Validates incoming SPIFFE SVIDs from agents calling our API
-3. Provides a client for the SPIRE workload API socket
-
-In production, SPIRE Agent runs as a sidecar and rotates certs every
-~hour. We just validate the cert chain here.
+Wiring a real SPIRE deployment (a running SPIRE server/agent,
+pyspiffe-based X.509 SVID fetch and chain validation, automatic
+rotation) is a genuine, separate infrastructure project — deliberately
+out of scope here. What was in scope, and is what this rewrite fixes:
+the code no longer claims to do that verification when it doesn't. An
+earlier version of validate_svid() had an unreachable "production"
+branch that silently `return True` after fetching (and never actually
+checking) a trust bundle — dead code (nothing in this codebase ever
+constructs SpireClient in non-mock mode), but exactly the kind of
+placeholder that reads as real verification to anyone skimming it.
 """
 
 import re
@@ -34,20 +41,19 @@ from app.core.config import settings
 
 @dataclass
 class AgentSVID:
-    """Parsed SPIFFE Verifiable Identity Document."""
+    """A parsed, format-checked SPIFFE-style identifier — not a verified credential."""
     spiffe_id: str       # Full URI: spiffe://trust-domain/path
-    trust_domain: str    # ai-iam.example.com
+    trust_domain: str
     org_id: str
     agent_id: str
     is_valid: bool
-    expiry: Optional[int] = None   # Unix timestamp
 
 
-# ── SPIFFE ID Generation ──────────────────────────────────────────────────────
+# ── SPIFFE-style ID generation ────────────────────────────────────────────────
 
 def build_spiffe_id(org_id: str, agent_id: str) -> str:
     """
-    Construct the canonical SPIFFE ID for an agent.
+    Construct this agent's canonical SPIFFE-style identifier.
 
     Format: spiffe://<trust-domain>/ns/<org_id>/sa/<agent_id>
     Example: spiffe://ai-iam.internal/ns/acme-corp/sa/agt_a3f9c2
@@ -56,18 +62,22 @@ def build_spiffe_id(org_id: str, agent_id: str) -> str:
     convention this platform's ID scheme follows: org_id maps to
     namespace, agent_id to service account.
 
-    This URI becomes the Subject of the X.509 cert issued by SPIRE.
+    This is a STRING IDENTIFIER, not a certificate subject — no X.509
+    cert is issued for it (see module docstring).
     """
     return f"spiffe://{settings.SPIFFE_TRUST_DOMAIN}/ns/{org_id}/sa/{agent_id}"
 
 
 def parse_spiffe_id(spiffe_uri: str) -> Optional[AgentSVID]:
     """
-    Parse and validate a SPIFFE ID URI.
+    Parse a SPIFFE-style identifier and check its FORMAT and trust
+    domain. Returns None if the URI doesn't match the expected shape or
+    names a different trust domain.
 
-    Returns None if the URI doesn't match our expected format —
-    this could indicate a misconfigured agent or an attacker probing
-    with forged identity claims.
+    This is a syntax/namespace check, not an authentication decision —
+    it proves the string is well-formed, not that whoever presented it
+    is who it claims to be. The RS256 JWT (core/jwt.py) is what's
+    actually verified on every request.
     """
     pattern = (
         r"^spiffe://(?P<trust_domain>[^/]+)"
@@ -80,7 +90,6 @@ def parse_spiffe_id(spiffe_uri: str) -> Optional[AgentSVID]:
 
     trust_domain = match.group("trust_domain")
     if trust_domain != settings.SPIFFE_TRUST_DOMAIN:
-        # Trust domain mismatch — reject immediately
         return None
 
     return AgentSVID(
@@ -92,64 +101,29 @@ def parse_spiffe_id(spiffe_uri: str) -> Optional[AgentSVID]:
     )
 
 
-# ── SPIRE Workload API Client ─────────────────────────────────────────────────
+# ── SpireClient ────────────────────────────────────────────────────────────
+#
+# Named for interface familiarity with a real deployment (see module
+# docstring), not because it talks to SPIRE — it does not. Kept as a
+# separate class, rather than inlining these two calls at their call
+# site in agent_service.py, so a future real SPIRE integration has one
+# clear seam to replace, without every caller needing to change.
 
 class SpireClient:
-    """
-    Thin client for the SPIRE Workload API (Unix socket).
+    """Resolves and format-checks this platform's SPIFFE-style identifiers. Performs no attestation — see module docstring."""
 
-    In production this uses the pyspiffe library to:
-    - Fetch the current SVID bundle for this workload
-    - Watch for SVID rotation (certs auto-rotate every ~1hr)
-    - Validate incoming SVIDs against the trust bundle
-
-    For local dev without a SPIRE server, validation is mocked.
-    """
-
-    def __init__(self, socket_path: Optional[str] = None):
-        self.socket_path = socket_path or settings.SPIRE_AGENT_SOCKET
-        self._mock_mode = socket_path is None
-
-    async def validate_svid(self, cert_pem: str, spiffe_id: str) -> bool:
+    async def validate_svid(self, spiffe_id: str) -> bool:
         """
-        Validate an X.509 SVID presented by an agent.
-
-        In production: verifies cert chain against SPIRE trust bundle.
-        In dev/test: parses the SPIFFE URI and trusts the format.
+        True if `spiffe_id` is a well-formed identifier for THIS trust
+        domain. NOT a cryptographic verification of anything — there is
+        no certificate here to validate a chain for.
         """
         parsed = parse_spiffe_id(spiffe_id)
-        if not parsed:
-            return False
+        return parsed is not None and parsed.is_valid
 
-        if self._mock_mode:
-            # Dev mode: trust format, not cryptography
-            return parsed.is_valid
-
-        # Production: use pyspiffe to verify against live trust bundle
-        # Requires: pip install pyspiffe
-        try:
-            from pyspiffe.workloadapi import WorkloadApiClient
-            async with WorkloadApiClient(self.socket_path) as client:
-                bundles = await client.fetch_x509_bundles()
-                # Verify cert_pem against trust bundle for our trust domain
-                # Full implementation would use x509 chain validation here
-                return True  # placeholder
-        except ImportError:
-            raise RuntimeError(
-                "pyspiffe not installed. Run: pip install pyspiffe\n"
-                "Or set SPIRE_AGENT_SOCKET=None for dev mode."
-            )
-
-    async def get_agent_svid(self, org_id: str, agent_id: str) -> Optional[str]:
-        """
-        Fetch the current SVID for a specific agent from SPIRE.
-        Used when this platform acts as a workload requesting its own cert.
-        """
-        expected_id = build_spiffe_id(org_id, agent_id)
-        if self._mock_mode:
-            return expected_id
-        # Production: call SPIRE workload API to get current X.509 SVID
-        return expected_id
+    async def get_agent_svid(self, org_id: str, agent_id: str) -> str:
+        """Return the canonical identifier for (org_id, agent_id) — see build_spiffe_id."""
+        return build_spiffe_id(org_id, agent_id)
 
 
 # Singleton — initialized once at startup

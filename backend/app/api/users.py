@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.schemas.user import UserResponse
 from app.repositories.user_repo import user_repo
-from app.api.deps import get_current_user, get_current_superuser
+from app.api.deps import get_current_user
 from app.models.user import User
 
 router = APIRouter()

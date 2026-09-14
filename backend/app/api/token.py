@@ -19,7 +19,7 @@ from app.services.api_key_service import api_key_service
 from app.services.delegation_service import delegation_service
 from app.services.agent_service import agent_service
 from app.services.mcp_proxy_service import mcp_proxy_service
-from app.core.jwt import create_agent_access_token, verify_agent_token, extract_jti
+from app.core.jwt import create_agent_access_token, verify_agent_token
 from app.core.constants import PermissionScope, AuditAction
 from app.core.config import settings
 from app.core.rate_limit import rate_limit_token_exchange

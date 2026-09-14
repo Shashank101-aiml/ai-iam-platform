@@ -2,8 +2,10 @@
 OAuth 2.1 / MCP resource-server compliance router.
 
 - POST /register            Dynamic Client Registration (RFC 7591), operator-gated
-- GET  /authorize            Authorization Code + PKCE grant, step 1 (operator-gated — see oauth_service's module docstring for what "consent" means here)
-- POST /token                Authorization Code + PKCE grant, step 2 (public — PKCE is what secures this, not an Authorization header)
+- GET  /authorize            Authorization Code + PKCE grant, step 1 (operator-gated —
+                             see oauth_service's module docstring for what "consent" means here)
+- POST /token                Authorization Code + PKCE grant, step 2 (public — PKCE is what
+                             secures this, not an Authorization header)
 
 Discovery documents (.well-known/*) are a SEPARATE router with no
 prefix — see well_known.py — because RFC 8414/9728 require them at a
@@ -79,10 +81,20 @@ async def authorize(
     redirect_uri: str = Query(...),
     code_challenge: str = Query(...),
     code_challenge_method: str = Query(...),
-    agent_id: str = Query(..., description="Which of the operator's org's agents this client is being authorized to act as"),
+    agent_id: str = Query(
+        ..., description="Which of the operator's org's agents this client is being authorized to act as"
+    ),
     scope: str = Query(""),
-    resource: str | None = Query(None, description="RFC 8707 Resource Indicator — the mcp_server_id this token should be bound to"),
-    tool_name: str | None = Query(None, description="RFC 9396 task-scoping — narrows the token to this ONE tool on `resource` (requires resource to also be set)"),
+    resource: str | None = Query(
+        None, description="RFC 8707 Resource Indicator — the mcp_server_id this token should be bound to"
+    ),
+    tool_name: str | None = Query(
+        None,
+        description=(
+            "RFC 9396 task-scoping — narrows the token to this ONE tool on `resource` "
+            "(requires resource to also be set)"
+        ),
+    ),
     state: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

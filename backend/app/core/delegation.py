@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from app.core.config import settings
-from app.core.permissions import validate_scope_subset, ScopeAttenuationError
+from app.core.permissions import validate_scope_subset
 
 
 class DelegationDepthExceeded(ValueError):
@@ -120,7 +120,7 @@ class DelegationValidator:
         # 3. Self-delegation
         if delegating_agent_id == delegatee_agent_id:
             raise SelfDelegationError(
-                f"Delegation rejected: agent cannot delegate to itself."
+                "Delegation rejected: agent cannot delegate to itself."
             )
 
         # 4. Scope attenuation — most critical check

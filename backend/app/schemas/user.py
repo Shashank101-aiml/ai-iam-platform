@@ -2,7 +2,6 @@
 User & Authentication Pydantic v2 schemas.
 """
 
-from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 

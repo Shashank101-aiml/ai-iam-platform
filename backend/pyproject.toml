@@ -1,0 +1,32 @@
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+
+[tool.ruff.lint]
+# E, F: pyflakes + the pycodestyle "error" subset — ruff's own documented
+# default when no config exists. Two rules from that set are deliberately
+# disabled, not because the code is exempt from cleanliness, but because
+# both are false positives for patterns this codebase uses intentionally:
+#
+# E402 (module-level import not at top of file): several modules (see
+# main.py) deliberately call setup code BETWEEN import groups — e.g.
+# configure_logging() must run before app.db.session is imported, since
+# that module creates its engines at import time. Reordering these to
+# satisfy E402 would silently reintroduce the exact bug that ordering
+# fixes (see main.py's own comment on it).
+#
+# E712 (comparison to True/False with ==): SQLAlchemy's Column objects
+# overload __eq__ to build a real SQL expression — `Agent.is_ephemeral
+# == True` is the correct ORM idiom for a WHERE clause, not a Python
+# truthiness check `is True` would silently break.
+select = ["E", "F"]
+ignore = ["E402", "E712"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+# This codebase has never been type-checked before (Slice 16 is what
+# adds the CI gate). Advisory, not blocking, until types are actually
+# annotated across the app — see .github/workflows/ci.yml's comment on
+# why this step doesn't fail the build yet.
+check_untyped_defs = false

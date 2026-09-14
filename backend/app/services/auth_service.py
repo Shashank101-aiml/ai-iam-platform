@@ -12,7 +12,7 @@ from typing import Optional
 import bcrypt
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from app.models.user import User
 from app.core.config import settings

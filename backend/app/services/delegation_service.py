@@ -44,7 +44,7 @@ from app.core.delegation import (
 from app.core.metrics import DELEGATION_DEPTH
 from app.core.permissions import ScopeAttenuationError
 from app.core.jwt import create_delegation_token
-from app.core.revocation import track_issued_jti, revoke_jti, revoke_all_in_index
+from app.core.revocation import track_issued_jti, revoke_jti
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
 

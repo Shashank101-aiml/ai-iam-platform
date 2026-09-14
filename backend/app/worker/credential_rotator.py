@@ -15,7 +15,7 @@ For this project: wired up via lifespan events in main.py.
 
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from app.core.metrics import CREDENTIAL_ROTATIONS_TOTAL
 from app.core.worker_lock import try_acquire
@@ -147,7 +147,7 @@ async def decommission_expired_ephemeral_agents() -> dict:
 
             await db.commit()
 
-        except Exception as e:
+        except Exception:
             await db.rollback()
             raise
 

@@ -14,9 +14,6 @@ Usage in route handlers:
 
 from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db.session import get_db
 
 
 async def get_agent_identity(request: Request) -> dict:

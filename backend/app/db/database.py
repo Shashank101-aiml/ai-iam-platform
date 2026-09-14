@@ -4,7 +4,6 @@ Provides clean re-exports of engine, AsyncSessionLocal, get_db, and an init_db
 helper for local development and test environment bootstrapping.
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import engine, AsyncSessionLocal, get_db
 from app.models.base import Base
 

@@ -4,14 +4,13 @@ Manages the two-phase lifecycle (`PENDING` → `ACTIVE` → `SUSPENDED` → `DEC
 SPIFFE attestation, and JIT activation.
 """
 
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, status, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.schemas.agent import (
     AgentCreate,
-    AgentActivateRequest,
     AgentJitActivateRequest,
     AgentStatusUpdate,
     AgentResponse,

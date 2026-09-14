@@ -97,13 +97,19 @@ export default function Sidebar({ activeTab, onTabChange }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
           <Layers size={16} color="#00f5ff" />
-          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f8fafc' }}>SPIRE Trust Domain</span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f8fafc' }}>Agent Identifier Namespace</span>
         </div>
         <p className="font-mono" style={{ fontSize: '0.72rem', color: '#00f5ff', wordBreak: 'break-all' }}>
           spiffe://ai-iam.internal
         </p>
+        {/* No SPIRE server, no X.509 cert, no mTLS — this is a
+            format-checked identifier string, not a workload
+            attestation (Slice 16; see backend/app/core/spiffe.py's
+            module docstring for the full explanation). The previous
+            "Workload mTLS Attestation Active" label here claimed a
+            security property this platform doesn't provide. */}
         <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>
-          Workload mTLS Attestation Active
+          SPIFFE-style URI format, not certificate-based attestation
         </div>
       </div>
     </aside>

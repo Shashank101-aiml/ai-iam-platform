@@ -75,7 +75,10 @@ async def lifespan(app: FastAPI):
     # why this refuses to boot rather than starting degraded.
     try:
         await verify_opa_reachable()
-        logger.info("OPA policy engine reachable" if settings.OPA_REQUIRED else "OPA_REQUIRED=false — skipped OPA reachability check")
+        logger.info(
+            "OPA policy engine reachable" if settings.OPA_REQUIRED
+            else "OPA_REQUIRED=false — skipped OPA reachability check"
+        )
     except Exception as e:
         logger.error(f"OPA reachability check failed: {e}")
         raise
@@ -85,7 +88,10 @@ async def lifespan(app: FastAPI):
     # rather than starting with revocation silently unenforceable.
     try:
         await verify_redis_reachable()
-        logger.info("Revocation index (Redis) reachable" if settings.REDIS_REQUIRED else "REDIS_REQUIRED=false — skipped Redis reachability check")
+        logger.info(
+            "Revocation index (Redis) reachable" if settings.REDIS_REQUIRED
+            else "REDIS_REQUIRED=false — skipped Redis reachability check"
+        )
     except Exception as e:
         logger.error(f"Redis reachability check failed: {e}")
         raise

@@ -11,7 +11,6 @@ Key design decisions:
 
 import uuid
 import time
-from datetime import datetime, timezone
 from typing import Optional
 
 from jose import jwt, JWTError, ExpiredSignatureError

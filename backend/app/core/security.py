@@ -11,7 +11,7 @@ Key design decisions:
 import secrets
 import hashlib
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 import bcrypt

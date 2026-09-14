@@ -89,7 +89,7 @@ export default function DelegationChainViewer({ agents }) {
                 </span>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginBottom: '0.75rem' }}>
-                Attestation: <code className="font-mono" style={{ color: '#00f5ff' }}>{child.spiffe_id || 'Pending Workload SVID'}</code>
+                Identifier: <code className="font-mono" style={{ color: '#00f5ff' }}>{child.spiffe_id || 'Not assigned'}</code>
               </div>
               <div>
                 <span style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Attenuated Subset Scopes:</span>

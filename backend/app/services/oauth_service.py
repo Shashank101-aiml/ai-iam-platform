@@ -184,7 +184,9 @@ async def build_authorization_redirect(
         if resource is None:
             return _error_redirect(redirect_uri, state, "invalid_request", "tool_name requires resource to also be set")
         if binding_tool_filter is not None and tool_name not in binding_tool_filter:
-            return _error_redirect(redirect_uri, state, "invalid_target", f"tool '{tool_name}' is not in this binding's tool_filter")
+            return _error_redirect(
+                redirect_uri, state, "invalid_target", f"tool '{tool_name}' is not in this binding's tool_filter"
+            )
 
     dangerous_scopes = set(requested_scopes) & set(settings.MCP_TASK_SCOPING_REQUIRED_SCOPES)
     if dangerous_scopes and tool_name is None:
@@ -257,22 +259,46 @@ async def exchange_authorization_code(
 
     raw = await get_redis_client().getdel(f"oauth_code:{code}")
     if raw is None:
-        raise HTTPException(status_code=400, detail={"error": "invalid_grant", "error_description": "code is invalid, expired, or already used"})
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_grant", "error_description": "code is invalid, expired, or already used"},
+        )
 
     code_data = json.loads(raw)
 
     if code_data["client_id"] != client_id:
-        raise HTTPException(status_code=400, detail={"error": "invalid_grant", "error_description": "client_id does not match the one the code was issued to"})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_grant",
+                "error_description": "client_id does not match the one the code was issued to",
+            },
+        )
     if code_data["redirect_uri"] != redirect_uri:
-        raise HTTPException(status_code=400, detail={"error": "invalid_grant", "error_description": "redirect_uri does not match the one used at /authorize"})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_grant",
+                "error_description": "redirect_uri does not match the one used at /authorize",
+            },
+        )
     if not verify_pkce_challenge(code_verifier, code_data["code_challenge"]):
-        raise HTTPException(status_code=400, detail={"error": "invalid_grant", "error_description": "code_verifier does not match the code_challenge presented at /authorize"})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_grant",
+                "error_description": "code_verifier does not match the code_challenge presented at /authorize",
+            },
+        )
 
     bound_resource = code_data.get("resource")
     if bound_resource is not None and resource != bound_resource:
         raise HTTPException(
             status_code=400,
-            detail={"error": "invalid_target", "error_description": f"token request's resource must match the one authorized: '{bound_resource}'"},
+            detail={
+                "error": "invalid_target",
+                "error_description": f"token request's resource must match the one authorized: '{bound_resource}'",
+            },
         )
 
     scopes = []

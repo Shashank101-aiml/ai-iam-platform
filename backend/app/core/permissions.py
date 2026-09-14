@@ -139,7 +139,7 @@ async def check_permission(
         raise PermissionDeniedError(
             agent_id, action, resource_id or resource_type
         )
-    except httpx.HTTPError as e:
+    except httpx.HTTPError:
         raise PermissionDeniedError(
             agent_id, action, resource_id or resource_type
         )

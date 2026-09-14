@@ -28,7 +28,6 @@ from fastapi import HTTPException, status
 from app.models.agent import Agent
 from app.core.constants import AgentStatus, AuditAction
 from app.core.spiffe import build_spiffe_id, spire_client
-from app.core.config import settings
 from app.core.revocation import revoke_all_in_index
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
@@ -146,9 +145,12 @@ class AgentService:
                 detail=f"Agent must be PENDING to activate. Current: {agent.status}"
             )
 
-        # Build and register the SPIFFE workload identity
+        # Assign this agent's SPIFFE-style identifier. No SPIRE server is
+        # involved and nothing here is attested — see core/spiffe.py's
+        # module docstring. spire_client.get_agent_svid() returns the
+        # same value build_spiffe_id() does; kept as a separate call so
+        # a real SPIRE integration has one seam to replace later.
         spiffe_id = build_spiffe_id(org_id, agent_id)
-        # In production, spire_client.get_agent_svid() registers with SPIRE
         await spire_client.get_agent_svid(org_id, agent_id)
 
         # Update state

@@ -179,7 +179,19 @@ services:
       - ../frontend:/app/frontend
     ports:
       - "5173:5173"
-    command: bash -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      # See vite.config.js's comment — "backend", the compose service's
+      # own DNS name on this network, not "localhost" (which inside
+      # THIS container means itself, not aiiam_backend).
+      VITE_BACKEND_URL: "http://backend:8000"
+    # sh, not bash (Slice 16, found live): node:20-alpine has no bash —
+    # `bash -c "..."` failed with "Cannot find module '/app/frontend/
+    # bash'" because the image's own entrypoint script, unable to find
+    # a `bash` executable on PATH, fell through to executing `node bash
+    # -c "..."` instead. This container had been crash-looping on every
+    # single `docker compose up` in this project's history; nothing
+    # before this slice ever exercised the frontend enough to notice.
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:
       - backend
 

@@ -1,5 +1,4 @@
 from sqlalchemy import Column, String, ForeignKey, Table, ARRAY
-from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, generate_uuid
 
 # Many-to-many: agents can have multiple roles

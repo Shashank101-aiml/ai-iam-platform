@@ -4,8 +4,7 @@ Represents granular, fine-grained access control scopes and resource definitions
 used alongside Open Policy Agent (OPA) for relationship-based access control (ReBAC).
 """
 
-from sqlalchemy import Column, String, Boolean, ForeignKey, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, Boolean, ForeignKey
 from app.models.base import Base, TimestampMixin, generate_uuid
 
 

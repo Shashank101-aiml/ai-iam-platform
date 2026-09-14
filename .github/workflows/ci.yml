@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies + lint tools
+        run: |
+          pip install -r backend/requirements.txt
+          pip install ruff mypy
+
+      - name: Ruff (blocking)
+        run: ruff check backend/app backend/tests
+
+      # Advisory, not blocking: this codebase's ORM models predate
+      # SQLAlchemy 2.0's typed `Mapped[]` declarative style (they use
+      # the older `Column(String, ...)` form), which mypy sees as
+      # `Column[str]` rather than `str` on every model attribute —
+      # ~99 findings, almost all of that one shape. Fixing it for real
+      # means migrating every model to `Mapped[]`, a genuine, separate
+      # refactor with its own regression-testing needs, not something
+      # to rush through as a side effect of wiring up CI. This step
+      # still runs and reports on every PR so the count is visible and
+      # can't silently grow unnoticed.
+      - name: mypy (advisory)
+        run: mypy backend/app --ignore-missing-imports --explicit-package-bases
+        continue-on-error: true
+
+  test:
+    name: Backend tests (real Postgres, Redis, OPA)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aiiam_user
+          POSTGRES_PASSWORD: supersecretpassword
+          POSTGRES_DB: aiiam_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aiiam_user -d aiiam_test_db"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Generate a throwaway RS256 keypair
+        run: |
+          mkdir -p backend/keys
+          openssl genrsa -out backend/keys/private.pem 2048
+          openssl rsa -in backend/keys/private.pem -outform PEM -pubout -out backend/keys/public.pem
+
+      - name: Create the extra databases test_schema_sync and seeding need
+        env:
+          PGPASSWORD: supersecretpassword
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y postgresql-client
+          for db in aiiam_db aiiam_schema_check_db; do
+            psql -h localhost -U aiiam_user -d aiiam_test_db -c "CREATE DATABASE $db"
+          done
+
+      # OPA is started by hand, not as a `services:` container — a
+      # `services:` container starts before `actions/checkout@v4` runs,
+      # so it could never see backend/policies mounted from the
+      # workspace. `--network host` puts it on the runner's own network
+      # namespace, the same one the postgres/redis service ports are
+      # published to, so "localhost:8181/5432/6379" all resolve the
+      # same way this step and the test step both expect.
+      - name: Start OPA with the real policy bundle mounted
+        run: |
+          docker run -d --name opa --network host \
+            -v "${{ github.workspace }}/backend/policies:/policies:ro" \
+            openpolicyagent/opa:latest-debug \
+            run --server --log-level=info --addr=0.0.0.0:8181 /policies
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8181/health && break
+            sleep 1
+          done
+
+      - name: opa test (blocking — policy is code)
+        run: docker exec opa /opa test /policies
+
+      - name: pytest (real Postgres + Redis + OPA, not mocks-only)
+        env:
+          DATABASE_URL: "postgresql+asyncpg://aiiam_user:supersecretpassword@localhost:5432/aiiam_db"
+          TEST_DATABASE_URL: "postgresql+asyncpg://aiiam_user:supersecretpassword@localhost:5432/aiiam_test_db"
+          SCHEMA_CHECK_DATABASE_URL: "postgresql+asyncpg://aiiam_user:supersecretpassword@localhost:5432/aiiam_schema_check_db"
+          OPA_URL: "http://localhost:8181"
+          REDIS_URL: "redis://localhost:6379/0"
+          TEST_REDIS_URL: "redis://localhost:6379/1"
+          # Settings.JWT_SECRET_KEY has no Python-level default (by
+          # design — see core/jwt.py) and this job's checkout has no
+          # backend/.env (gitignored, never committed) for
+          # pydantic-settings' env_file to fall back to, unlike a local
+          # bind-mounted dev container that happens to see a real one.
+          # A CI-only throwaway value, distinct from docker-compose.yml's
+          # own local-dev default so this workflow doesn't accidentally
+          # depend on that exact string staying what it is.
+          JWT_SECRET_KEY: "ci-only-throwaway-hs256-secret-do-not-reuse"
+        run: |
+          cd backend
+          python -m pytest tests/ -q
+
+  build:
+    name: Build container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -f docker/Dockerfile -t ai-iam-backend:ci .
+
+  security:
+    name: Dependency & secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks secret scan (blocking)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Advisory, not blocking: as of this workflow being written,
+      # pip-audit reports 47 known CVEs across 6 of this project's
+      # currently pinned dependencies (starlette, cryptography,
+      # python-jose, python-multipart, pytest, ecdsa). Upgrading them —
+      # cryptography and starlette in particular have had major-version
+      # jumps since these versions were pinned — is real follow-up work
+      # that needs its own regression testing, not something to silently
+      # absorb as a side effect of adding CI, and not something to hide
+      # by skipping the scan. This step runs on every PR so the count
+      # is visible and reviewable, same reasoning as the mypy step above.
+      - name: pip-audit (advisory)
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
+        continue-on-error: true

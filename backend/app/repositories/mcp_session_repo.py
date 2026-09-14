@@ -1,5 +1,5 @@
 from typing import Optional, Sequence
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mcp_session import McpSession
