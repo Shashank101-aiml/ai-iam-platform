@@ -82,6 +82,7 @@ async def authorize(
     agent_id: str = Query(..., description="Which of the operator's org's agents this client is being authorized to act as"),
     scope: str = Query(""),
     resource: str | None = Query(None, description="RFC 8707 Resource Indicator — the mcp_server_id this token should be bound to"),
+    tool_name: str | None = Query(None, description="RFC 9396 task-scoping — narrows the token to this ONE tool on `resource` (requires resource to also be set)"),
     state: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -106,6 +107,7 @@ async def authorize(
         state=state,
         scope=scope,
         resource=resource,
+        tool_name=tool_name,
         agent_id=agent_id,
         org_id=current_user.org_id,
     )

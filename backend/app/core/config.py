@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     # code sitting in a browser history.
     OAUTH_AUTHORIZATION_CODE_TTL_SECONDS: int = 120
 
+    # Task-scoped tokens (Slice 12) — Stacklok's "ambient authority"
+    # problem: a bearer token today authorizes ANY tool call its scopes
+    # allow for its whole 15-minute lifetime, not just the one call it
+    # was minted for. An RFC 9396-style authorization_details claim
+    # (core/jwt.py) can bind a token to ONE specific (mcp_server_id,
+    # tool_name) pair at mint time; mcp_proxy_service then refuses any
+    # OTHER call even if scopes/OPA would allow it. Opt-in everywhere
+    # except these scopes, where the stronger model is mandatory — a
+    # token requesting one of these without task-scoping is refused at
+    # mint time, not silently issued session-scoped.
+    MCP_TASK_SCOPING_REQUIRED_SCOPES: list[str] = ["credential:rotate"]
+
     class Config:
         env_file = ".env"
         case_sensitive = True

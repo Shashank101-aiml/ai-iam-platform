@@ -125,6 +125,7 @@ class McpProxyService:
         delegation_depth: int = 0,
         source_ip: Optional[str] = None,
         token_resource: Optional[str] = None,
+        authorization_details: Optional[list[dict]] = None,
     ) -> dict:
         """
         Proxy a tool call through binding resolution and policy enforcement.
@@ -133,12 +134,13 @@ class McpProxyService:
         1. Resolve mcp_server_url + tool_filter from the agent's own
            mcp_bindings (never from the caller — SSRF prevention)
         2. RFC 8707 Resource Indicator enforcement (token_resource, if set)
-        3. OPA policy check (fail closed)
-        4. tool_filter enforcement
-        5. If allowed: forward to MCP server (circuit-breaker + size/time bounded)
-        6. Record session with hashed args/results
-        7. Emit audit event
-        8. Return result to agent
+        3. RFC 9396 task-scope enforcement (authorization_details, if set)
+        4. OPA policy check (fail closed)
+        5. tool_filter enforcement
+        6. If allowed: forward to MCP server (circuit-breaker + size/time bounded)
+        7. Record session with hashed args/results
+        8. Emit audit event
+        9. Return result to agent
         """
         session_id = str(uuid.uuid4())
         args_hash = _hash_payload(tool_args)
@@ -213,7 +215,58 @@ class McpProxyService:
                 },
             )
 
-        # Step 3: Policy enforcement BEFORE the call
+        # Step 3: RFC 9396 task-scope enforcement — a token minted bound
+        # to specific (mcp_server_id, tool_name) pairs (via /token
+        # /exchange's or /oauth/token's `intent`/task-scoping — see
+        # core/jwt.py's authorization_details claim) must match the
+        # EXACT call being made, not just an allowed server or a valid
+        # scope. This is what closes the "ambient authority" gap: a
+        # session-scoped bearer token can otherwise be replayed against
+        # any tool call its scopes cover for its whole lifetime. A
+        # mismatch here is a DISTINCT failure mode from a policy denial
+        # — a different error code and a different policy_decision
+        # value on the session row, both queryable/meterable
+        # separately from a generic OPA/tool_filter block — because the
+        # cause is completely different: the token simply was never
+        # authorized for this call, independent of whether policy would
+        # have allowed it.
+        if authorization_details is not None:
+            authorized = any(
+                entry.get("mcp_server_id") == mcp_server_id and entry.get("tool_name") == tool_name
+                for entry in authorization_details
+            )
+            if not authorized:
+                reason = (
+                    f"token is task-scoped (RFC 9396 authorization_details) to a "
+                    f"different call; not authorized for tool '{tool_name}' on "
+                    f"server '{mcp_server_id}'"
+                )
+                await self._block(
+                    db,
+                    session_id=session_id,
+                    org_id=org_id,
+                    agent_id=agent_id,
+                    mcp_server_id=mcp_server_id,
+                    mcp_server_url=server_url,
+                    tool_name=tool_name,
+                    args_hash=args_hash,
+                    args_metadata=args_metadata,
+                    causal_trace_id=causal_trace_id,
+                    reason=reason,
+                    source_ip=source_ip,
+                    policy_decision="task_scope_denied",
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "token_not_authorized_for_action",
+                        "tool": tool_name,
+                        "reason": reason,
+                        "session_id": session_id,
+                    },
+                )
+
+        # Step 4: Policy enforcement BEFORE the call
         try:
             await check_permission(
                 agent_id=agent_id,
@@ -249,7 +302,7 @@ class McpProxyService:
                 },
             )
 
-        # Step 4: per-binding tool allowlist — defense in depth even if
+        # Step 5: per-binding tool allowlist — defense in depth even if
         # scopes/OPA would otherwise allow this call.
         if tool_filter is not None and tool_name not in tool_filter:
             reason = f"tool '{tool_name}' is not in this binding's tool_filter"
@@ -277,7 +330,7 @@ class McpProxyService:
                 },
             )
 
-        # Step 5: Forward to actual MCP server
+        # Step 6: Forward to actual MCP server
         result, error_code = await self._call_mcp_server(
             server_url, mcp_server_id, tool_name, tool_args
         )
@@ -285,7 +338,7 @@ class McpProxyService:
         call_status = "success" if error_code is None else "error"
         result_hash = _hash_payload(result) if result is not None else None
 
-        # Step 6: Record session with hashes only
+        # Step 7: Record session with hashes only
         await self._record_session(
             db,
             session_id=session_id,
@@ -305,7 +358,7 @@ class McpProxyService:
             error_code=error_code,
         )
 
-        # Step 7: Audit event
+        # Step 8: Audit event
         await audit_repo.append(
             org_id=org_id,
             action=(
@@ -449,8 +502,16 @@ class McpProxyService:
         causal_trace_id: str,
         reason: str,
         source_ip: Optional[str],
+        policy_decision: str = "blocked",
     ) -> None:
-        """Record + audit a blocked call and commit immediately (see module docstring point 7)."""
+        """
+        Record + audit a blocked call and commit immediately (see module
+        docstring point 7). policy_decision defaults to the generic
+        "blocked" value every earlier denial reason uses; callers pass a
+        more specific value (e.g. "task_scope_denied") when the denial
+        is a genuinely distinct failure mode worth being able to query/
+        meter separately from an ordinary policy/tool_filter block.
+        """
         await self._record_session(
             db,
             session_id=session_id,
@@ -463,7 +524,7 @@ class McpProxyService:
             args_metadata=args_metadata,
             result_hash=None,
             status="blocked",
-            policy_decision="blocked",
+            policy_decision=policy_decision,
             blocking_reason=reason,
             duration_ms=0,
             causal_trace_id=causal_trace_id,

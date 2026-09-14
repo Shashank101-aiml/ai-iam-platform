@@ -128,6 +128,7 @@ async def build_authorization_redirect(
     state: Optional[str],
     scope: str,
     resource: Optional[str],
+    tool_name: Optional[str],
     agent_id: str,
     org_id: str,
 ) -> str:
@@ -167,10 +168,30 @@ async def build_authorization_redirect(
     if invalid_scopes:
         return _error_redirect(redirect_uri, state, "invalid_scope", f"not permitted for this agent: {sorted(invalid_scopes)}")
 
+    binding_tool_filter = None
     if resource is not None:
-        bound_server_ids = {b.get("server_id") for b in (agent.mcp_bindings or [])}
-        if resource not in bound_server_ids:
+        binding = next((b for b in (agent.mcp_bindings or []) if b.get("server_id") == resource), None)
+        if binding is None:
             return _error_redirect(redirect_uri, state, "invalid_target", f"agent is not bound to resource '{resource}'")
+        binding_tool_filter = binding.get("tool_filter")
+
+    # RFC 9396 task-scoping (Slice 12) — tool_name narrows the token to
+    # ONE specific call, closing the "ambient authority" gap a
+    # session-scoped bearer token otherwise has for its whole lifetime.
+    # Requires resource too: a specific tool only means something
+    # relative to a specific server.
+    if tool_name is not None:
+        if resource is None:
+            return _error_redirect(redirect_uri, state, "invalid_request", "tool_name requires resource to also be set")
+        if binding_tool_filter is not None and tool_name not in binding_tool_filter:
+            return _error_redirect(redirect_uri, state, "invalid_target", f"tool '{tool_name}' is not in this binding's tool_filter")
+
+    dangerous_scopes = set(requested_scopes) & set(settings.MCP_TASK_SCOPING_REQUIRED_SCOPES)
+    if dangerous_scopes and tool_name is None:
+        return _error_redirect(
+            redirect_uri, state, "invalid_scope",
+            f"scope(s) {sorted(dangerous_scopes)} require task-scoping — pass resource and tool_name",
+        )
 
     code = secrets.token_urlsafe(32)
     code_data = {
@@ -181,6 +202,7 @@ async def build_authorization_redirect(
         "org_id": org_id,
         "scopes": requested_scopes,
         "resource": resource,
+        "tool_name": tool_name,
     }
     await get_redis_client().set(
         f"oauth_code:{code}",
@@ -266,6 +288,15 @@ async def exchange_authorization_code(
     )
     trace_id = f"oauth:{uuid.uuid4()}"
 
+    authorization_details = None
+    bound_tool_name = code_data.get("tool_name")
+    if bound_tool_name is not None:
+        authorization_details = [{
+            "type": "mcp_tool_call",
+            "mcp_server_id": bound_resource,
+            "tool_name": bound_tool_name,
+        }]
+
     token_dict = create_agent_access_token(
         agent_id=code_data["agent_id"],
         org_id=code_data["org_id"],
@@ -273,6 +304,7 @@ async def exchange_authorization_code(
         causal_trace_id=trace_id,
         resource=bound_resource,
         on_behalf_of=on_behalf_of,
+        authorization_details=authorization_details,
     )
     await track_issued_jti(f"agent:{code_data['agent_id']}:jtis", token_dict["jti"], token_dict["exp"])
 

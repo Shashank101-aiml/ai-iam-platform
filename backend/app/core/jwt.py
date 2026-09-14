@@ -40,9 +40,23 @@ def create_agent_access_token(
     delegation_depth: int = 0,
     resource: Optional[str] = None,
     on_behalf_of: Optional[str] = None,
+    authorization_details: Optional[list[dict]] = None,
 ) -> dict:
     """
     Issue a short-lived access token for an AI agent.
+
+    authorization_details (RFC 9396 Rich Authorization Requests) binds
+    this token to one or more SPECIFIC (mcp_server_id, tool_name) pairs
+    — narrower than `resource` above (server-level) or `scopes`
+    (permission-level): this says WHICH call the token was minted for,
+    not just which server or what class of action. mcp_proxy_service
+    refuses any tool call that doesn't match one of these entries, even
+    if resource/scopes/OPA would all otherwise allow it. This is what
+    closes the "ambient authority" gap a bearer token otherwise has for
+    its whole lifetime. None (the default) means session-scoped,
+    unchanged from before this existed — opt-in everywhere except the
+    scopes settings.MCP_TASK_SCOPING_REQUIRED_SCOPES names, where the
+    caller (api/token.py, api/oauth.py) refuses to mint without it.
 
     resource (RFC 8707 Resource Indicators) binds this token to ONE
     specific mcp_server_id, set when the token was minted through the
@@ -90,6 +104,9 @@ def create_agent_access_token(
         **({"parent_agent_id": parent_agent_id} if parent_agent_id else {}),
         # RFC 8707 Resource Indicator — present only for OAuth-flow tokens
         **({"resource": resource} if resource else {}),
+        # RFC 9396 authorization_details — present only when the caller
+        # requested task-scoping (or a dangerous scope mandated it).
+        **({"authorization_details": authorization_details} if authorization_details else {}),
         # Which human operator's authority this token carries — resolved
         # server-side (agent_service.resolve_on_behalf_of), never
         # caller-supplied. Absent for agents with no human anchor at

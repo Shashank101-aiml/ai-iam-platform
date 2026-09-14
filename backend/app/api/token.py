@@ -18,8 +18,10 @@ from app.schemas.delegation_grant import (
 from app.services.api_key_service import api_key_service
 from app.services.delegation_service import delegation_service
 from app.services.agent_service import agent_service
+from app.services.mcp_proxy_service import mcp_proxy_service
 from app.core.jwt import create_agent_access_token, verify_agent_token, extract_jti
 from app.core.constants import PermissionScope, AuditAction
+from app.core.config import settings
 from app.core.revocation import track_issued_jti
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
@@ -78,6 +80,54 @@ async def exchange_token(
             db, agent=agent, requested_scopes=key_info["scopes"]
         )
 
+        # Task-scoping (Slice 12, RFC 9396): an optional `intent` narrows
+        # this token to exactly one (mcp_server_id, tool_name) pair,
+        # closing the "ambient authority" gap a session-scoped bearer
+        # token otherwise has for its whole lifetime. Validated against
+        # the agent's OWN mcp_bindings — the same binding a real call
+        # would resolve through — so a client can't request task-scoping
+        # for a server/tool the agent could never actually reach anyway.
+        authorization_details = None
+        if token_in.intent:
+            _, tool_filter, binding_error = await mcp_proxy_service._resolve_mcp_binding(
+                db, agent_id=agent.id, org_id=agent.org_id, mcp_server_id=token_in.intent.mcp_server_id
+            )
+            if binding_error is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": "invalid_intent", "error_description": binding_error},
+                )
+            if tool_filter is not None and token_in.intent.tool_name not in tool_filter:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "invalid_intent",
+                        "error_description": f"tool '{token_in.intent.tool_name}' is not in this binding's tool_filter",
+                    },
+                )
+            authorization_details = [{
+                "type": "mcp_tool_call",
+                "mcp_server_id": token_in.intent.mcp_server_id,
+                "tool_name": token_in.intent.tool_name,
+            }]
+
+        # Mandate the stronger model exactly where it matters: a token
+        # covering a scope named in MCP_TASK_SCOPING_REQUIRED_SCOPES is
+        # refused, not silently widened to session-scoped, if the
+        # caller didn't supply an intent.
+        dangerous_scopes = set(key_info["scopes"]) & set(settings.MCP_TASK_SCOPING_REQUIRED_SCOPES)
+        if dangerous_scopes and authorization_details is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "task_scoping_required",
+                    "error_description": (
+                        f"scope(s) {sorted(dangerous_scopes)} require task-scoping — "
+                        "provide 'intent': {mcp_server_id, tool_name}"
+                    ),
+                },
+            )
+
         token_dict = create_agent_access_token(
             agent_id=key_info["agent_id"],
             org_id=key_info["org_id"],
@@ -85,6 +135,7 @@ async def exchange_token(
             causal_trace_id=trace_id,
             delegation_depth=0,
             on_behalf_of=on_behalf_of,
+            authorization_details=authorization_details,
         )
         # Track this jti under both reverse indexes a cascade revoke
         # reads from — suspending/decommissioning the agent, or revoking
@@ -124,6 +175,7 @@ async def exchange_token(
             "causal_trace_id": trace_id,
             "delegation_depth": 0,
             "on_behalf_of": on_behalf_of,
+            "authorization_details": authorization_details,
         }
     else:
         raise HTTPException(

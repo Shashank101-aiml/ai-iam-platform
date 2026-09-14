@@ -152,6 +152,10 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             # the OAuth authorization_code flow with a resource=
             # parameter — see core/jwt.py's create_agent_access_token.
             "resource": payload.get("resource"),
+            # RFC 9396 authorization_details, if this token was minted
+            # task-scoped to specific (mcp_server_id, tool_name) pairs —
+            # see core/jwt.py's authorization_details claim.
+            "authorization_details": payload.get("authorization_details"),
             # Which human operator's authority this token carries, if
             # any — see core/jwt.py's on_behalf_of claim and
             # agent_service.resolve_on_behalf_of.

@@ -54,6 +54,7 @@ async def execute_mcp_tool(
         delegation_depth=current_agent.get("delegation_depth", 0),
         source_ip=request.client.host if request.client else None,
         token_resource=current_agent.get("resource"),
+        authorization_details=current_agent.get("authorization_details"),
     )
 
     # Compute hashes for response DTO match
