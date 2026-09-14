@@ -78,6 +78,8 @@ async def check_permission(
     resource_id: Optional[str] = None,
     token_scopes: list[str] = [],
     delegation_depth: int = 0,
+    capabilities: list[str] = [],
+    provenance_tainted: bool = False,
 ) -> bool:
     """
     Evaluate an access decision via OPA.
@@ -93,9 +95,20 @@ async def check_permission(
             "action": "tool:execute",
             "resource": { "type": "mcp_tool", "id": "search_web" },
             "token_scopes": ["tool:execute", "audit:read"],
-            "delegation_depth": 1
+            "delegation_depth": 1,
+            "capabilities": ["external_send"],
+            "provenance": { "tainted": false }
         }
     }
+
+    capabilities/provenance (Slice 13) let the policy deny a coarse
+    risk category outright — e.g. "external_send" — once the calling
+    agent's causal trace has already pulled content this platform
+    doesn't control, regardless of scope or depth. Both are resolved
+    server-side by the caller (mcp_proxy_service, from the agent's own
+    operator-authored mcp_bindings and a query over prior calls in the
+    same trace) — never agent-supplied, same trust model as everything
+    else this function receives.
     """
     opa_input = {
         "input": {
@@ -108,6 +121,8 @@ async def check_permission(
             },
             "token_scopes": token_scopes,
             "delegation_depth": delegation_depth,
+            "capabilities": capabilities,
+            "provenance": {"tainted": provenance_tainted},
         }
     }
 

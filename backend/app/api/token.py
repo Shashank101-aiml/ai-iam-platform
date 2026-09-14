@@ -89,15 +89,15 @@ async def exchange_token(
         # for a server/tool the agent could never actually reach anyway.
         authorization_details = None
         if token_in.intent:
-            _, tool_filter, binding_error = await mcp_proxy_service._resolve_mcp_binding(
+            binding = await mcp_proxy_service._resolve_mcp_binding(
                 db, agent_id=agent.id, org_id=agent.org_id, mcp_server_id=token_in.intent.mcp_server_id
             )
-            if binding_error is not None:
+            if binding.error is not None:
                 raise HTTPException(
                     status_code=422,
-                    detail={"error": "invalid_intent", "error_description": binding_error},
+                    detail={"error": "invalid_intent", "error_description": binding.error},
                 )
-            if tool_filter is not None and token_in.intent.tool_name not in tool_filter:
+            if binding.tool_filter is not None and token_in.intent.tool_name not in binding.tool_filter:
                 raise HTTPException(
                     status_code=422,
                     detail={

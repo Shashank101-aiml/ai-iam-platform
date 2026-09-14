@@ -27,13 +27,22 @@ Security properties:
    the very calls most worth keeping a record of.
 8. Response size cap, timeout, and a per-server circuit breaker bound the
    blast radius of a slow, wedged, or malicious downstream MCP server.
+9. Provenance-aware authorization: a per-binding untrusted_source flag
+   (operator-authored, never agent-supplied) tags whether a call's
+   result came from a source this platform doesn't control. If ANY
+   earlier call in the same causal_trace_id was tainted this way, a
+   LATER call in that trace attempting a high-risk capability
+   (external_send, credential_access — also operator-authored, per
+   tool) is denied by OPA outright, independent of scope. This is a
+   heuristic against "read untrusted content, get instructions
+   injected, exfiltrate" — not a claim to have solved prompt injection.
 """
 
 import uuid
 import time
 import json
 import hashlib
-from typing import Optional, Any
+from typing import NamedTuple, Optional, Any
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +54,16 @@ from app.core.constants import AuditAction
 from app.core.permissions import check_permission, PermissionDeniedError
 from app.repositories.audit_repo import audit_repo
 from app.repositories.agent_repo import agent_repo
+from app.repositories.mcp_session_repo import mcp_session_repo
+
+
+class _ResolvedBinding(NamedTuple):
+    """Everything resolved server-side from an agent's own mcp_bindings entry."""
+    server_url: Optional[str]
+    tool_filter: Optional[list[str]]
+    untrusted_source: bool
+    tool_capabilities: dict[str, list[str]]
+    error: Optional[str]
 
 
 def _hash_payload(data: Any) -> str:
@@ -131,14 +150,19 @@ class McpProxyService:
         Proxy a tool call through binding resolution and policy enforcement.
 
         Steps:
-        1. Resolve mcp_server_url + tool_filter from the agent's own
-           mcp_bindings (never from the caller — SSRF prevention)
+        1. Resolve mcp_server_url + tool_filter + provenance metadata
+           from the agent's own mcp_bindings (never from the caller —
+           SSRF prevention)
         2. RFC 8707 Resource Indicator enforcement (token_resource, if set)
         3. RFC 9396 task-scope enforcement (authorization_details, if set)
-        4. OPA policy check (fail closed)
+        4. Resolve this trace's provenance taint + this call's risk
+           capabilities, then OPA policy check (fail closed) — denies a
+           high-risk capability outright if an earlier call in the SAME
+           trace already pulled untrusted content
         5. tool_filter enforcement
         6. If allowed: forward to MCP server (circuit-breaker + size/time bounded)
-        7. Record session with hashed args/results
+        7. Record session with hashed args/results (+ this call's own
+           source_untrusted tag, for the NEXT call in the trace to see)
         8. Emit audit event
         9. Return result to agent
         """
@@ -149,10 +173,10 @@ class McpProxyService:
 
         # Step 1: resolve the real server URL ourselves — the request
         # body never carries one.
-        server_url, tool_filter, binding_error = await self._resolve_mcp_binding(
+        binding = await self._resolve_mcp_binding(
             db, agent_id=agent_id, org_id=org_id, mcp_server_id=mcp_server_id
         )
-        if binding_error is not None:
+        if binding.error is not None:
             await self._block(
                 db,
                 session_id=session_id,
@@ -164,7 +188,7 @@ class McpProxyService:
                 args_hash=args_hash,
                 args_metadata=args_metadata,
                 causal_trace_id=causal_trace_id,
-                reason=binding_error,
+                reason=binding.error,
                 source_ip=source_ip,
             )
             raise HTTPException(
@@ -172,10 +196,11 @@ class McpProxyService:
                 detail={
                     "error": "tool_call_blocked",
                     "tool": tool_name,
-                    "reason": binding_error,
+                    "reason": binding.error,
                     "session_id": session_id,
                 },
             )
+        server_url, tool_filter = binding.server_url, binding.tool_filter
 
         # Step 2: RFC 8707 Resource Indicator enforcement — a token
         # minted bound to ONE specific mcp_server_id (via the OAuth
@@ -266,7 +291,16 @@ class McpProxyService:
                     },
                 )
 
-        # Step 4: Policy enforcement BEFORE the call
+        # Step 4: resolve this trace's provenance taint (did an earlier
+        # call in this SAME causal_trace_id already pull content from a
+        # source this platform doesn't control?) and this call's own
+        # risk capabilities, then run policy — OPA denies outright if a
+        # high-risk capability (external_send, credential_access) is
+        # attempted inside a tainted trace, regardless of scope/depth.
+        provenance_tainted = await self._trace_is_tainted(
+            db, causal_trace_id=causal_trace_id, org_id=org_id
+        )
+        capabilities = binding.tool_capabilities.get(tool_name, [])
         try:
             await check_permission(
                 agent_id=agent_id,
@@ -276,6 +310,8 @@ class McpProxyService:
                 resource_id=tool_name,
                 token_scopes=token_scopes,
                 delegation_depth=delegation_depth,
+                capabilities=capabilities,
+                provenance_tainted=provenance_tainted,
             )
         except PermissionDeniedError as e:
             await self._block(
@@ -338,7 +374,10 @@ class McpProxyService:
         call_status = "success" if error_code is None else "error"
         result_hash = _hash_payload(result) if result is not None else None
 
-        # Step 7: Record session with hashes only
+        # Step 7: Record session with hashes only. source_untrusted only
+        # ever True on an actual "success" — a call that errored never
+        # retrieved content, so it can't have tainted anything, even if
+        # its binding is itself marked untrusted_source.
         await self._record_session(
             db,
             session_id=session_id,
@@ -351,6 +390,7 @@ class McpProxyService:
             args_metadata=args_metadata,
             result_hash=result_hash,
             status=call_status,
+            source_untrusted=(binding.untrusted_source and call_status == "success"),
             policy_decision="allowed",
             blocking_reason=None,
             duration_ms=duration_ms,
@@ -413,28 +453,53 @@ class McpProxyService:
         agent_id: str,
         org_id: str,
         mcp_server_id: str,
-    ) -> tuple[Optional[str], Optional[list[str]], Optional[str]]:
+    ) -> _ResolvedBinding:
         """
-        Resolve mcp_server_url + tool_filter from the agent's OWN
-        mcp_bindings — never from the caller's request body.
+        Resolve mcp_server_url + tool_filter + provenance metadata from
+        the agent's OWN mcp_bindings — never from the caller's request
+        body.
 
-        Returns (server_url, tool_filter, error_reason). error_reason is
-        None on success; when set, the caller must treat this as blocked.
+        .error is None on success; when set, the caller must treat this
+        as blocked and every other field is meaningless.
         """
         agent = await agent_repo.get_by_id_and_org(db, agent_id, org_id)
         if agent is None:
-            return None, None, f"agent '{agent_id}' not found"
+            return _ResolvedBinding(None, None, False, {}, f"agent '{agent_id}' not found")
 
         for binding in (agent.mcp_bindings or []):
             if binding.get("server_id") == mcp_server_id:
                 server_url = binding.get("server_url")
                 if not server_url:
-                    return None, None, (
-                        f"mcp_server_id '{mcp_server_id}' binding has no server_url configured"
+                    return _ResolvedBinding(
+                        None, None, False, {},
+                        f"mcp_server_id '{mcp_server_id}' binding has no server_url configured",
                     )
-                return server_url, binding.get("tool_filter"), None
+                return _ResolvedBinding(
+                    server_url,
+                    binding.get("tool_filter"),
+                    bool(binding.get("untrusted_source", False)),
+                    binding.get("tool_capabilities") or {},
+                    None,
+                )
 
-        return None, None, f"agent is not bound to mcp_server_id '{mcp_server_id}'"
+        return _ResolvedBinding(
+            None, None, False, {}, f"agent is not bound to mcp_server_id '{mcp_server_id}'"
+        )
+
+    async def _trace_is_tainted(
+        self, db: AsyncSession, *, causal_trace_id: str, org_id: str
+    ) -> bool:
+        """
+        True if any EARLIER, successfully-completed call in this same
+        causal trace pulled content from a source this platform doesn't
+        control (mcp_bindings[].untrusted_source). This is what makes
+        the taint propagate FORWARD through a trace — a later call is
+        judged by what the trace has already been exposed to, not just
+        its own binding. A blocked or errored call never actually
+        retrieved content, so only "success" rows count.
+        """
+        prior_sessions = await mcp_session_repo.get_by_trace(db, causal_trace_id, org_id)
+        return any(s.source_untrusted and s.status == "success" for s in prior_sessions)
 
     async def _call_mcp_server(
         self,

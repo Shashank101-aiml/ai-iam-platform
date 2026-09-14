@@ -61,3 +61,39 @@ test_deny_when_resource_type_is_not_mcp_tool_but_action_still_matches_blocked_na
 		"token_scopes": ["audit:read"],
 	})
 }
+
+# ── Slice 13: provenance-aware authorization ──────────────────────────
+
+test_deny_when_tainted_trace_attempts_external_send if {
+	not authz.allow with input as object.union(base_input, {
+		"capabilities": ["external_send"],
+		"provenance": {"tainted": true},
+	})
+}
+
+test_deny_when_tainted_trace_attempts_credential_access if {
+	not authz.allow with input as object.union(base_input, {
+		"capabilities": ["credential_access"],
+		"provenance": {"tainted": true},
+	})
+}
+
+test_allow_when_tainted_but_capability_is_not_high_risk if {
+	authz.allow with input as object.union(base_input, {
+		"capabilities": ["read_only"],
+		"provenance": {"tainted": true},
+	})
+}
+
+test_allow_when_capability_is_high_risk_but_trace_not_tainted if {
+	authz.allow with input as object.union(base_input, {
+		"capabilities": ["external_send"],
+		"provenance": {"tainted": false},
+	})
+}
+
+test_allow_when_neither_capabilities_nor_provenance_given if {
+	# Backward compatibility: a caller that never sends these fields at
+	# all (matches every pre-Slice-13 input) must be unaffected.
+	authz.allow with input as base_input
+}

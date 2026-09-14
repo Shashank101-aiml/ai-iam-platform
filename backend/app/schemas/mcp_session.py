@@ -48,5 +48,6 @@ class McpSessionLogResponse(BaseModel):
     duration_ms: Optional[int] = None
     policy_decision: str
     blocking_reason: Optional[str] = None
+    source_untrusted: bool = False
     causal_trace_id: str
     created_at: datetime

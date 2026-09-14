@@ -41,11 +41,31 @@ blocked_tools := {
 	"rm_rf",
 }
 
+# Coarse risk categories (see mcp_bindings[].tool_capabilities, resolved
+# server-side by mcp_proxy_service — never agent-supplied) denied
+# outright once ANY earlier call in the SAME causal trace already pulled
+# content this platform doesn't control (mcp_bindings[].untrusted_source
+# — web search, a third-party MCP server, arbitrary file content). This
+# is the "lethal trifecta" pattern: untrusted-content exposure plus the
+# ability to exfiltrate or touch a credential in the same trace. A
+# heuristic that raises the cost of "read poisoned content, get
+# instructions injected, exfiltrate" — not a claim to have solved prompt
+# injection, and it does nothing for a capability outside this set or a
+# trace whose provenance was never tainted in the first place.
+tainted_denied_capabilities := {"external_send", "credential_access"}
+
 allow if {
 	well_formed_input
 	input.action in input.token_scopes
 	input.delegation_depth <= max_delegation_depth
 	not is_blocked_tool_call
+	not is_tainted_high_risk_call
+}
+
+is_tainted_high_risk_call if {
+	input.provenance.tainted == true
+	some capability in input.capabilities
+	capability in tainted_denied_capabilities
 }
 
 # Baseline input sanity — not a real cross-org check (nothing in this

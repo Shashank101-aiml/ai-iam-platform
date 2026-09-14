@@ -59,8 +59,19 @@ class Agent(Base, TimestampMixin):
     # by server_id rather than accepting a URL in the tool-call request
     # body, so a compromised or malicious agent can't redirect the proxy's
     # outbound call to an arbitrary address (SSRF).
-    # [{"server_id": "...", "server_url": "https://...", "tool_filter": ["search_web", "read_file"]}]
+    # [{"server_id": "...", "server_url": "https://...", "tool_filter": ["search_web", "read_file"],
+    #   "untrusted_source": true, "tool_capabilities": {"send_email": ["external_send"]}}]
     # tool_filter is optional; omitting it allows any tool on that server.
+    # untrusted_source (Slice 13, optional, default false) marks every
+    # result FROM THIS SERVER as content the platform doesn't control
+    # (web search, a third-party MCP server, arbitrary file content) —
+    # operator-authored, exactly like tool_filter, so an agent can't
+    # simply declare its own untrusted reads "trusted". tool_capabilities
+    # (optional) tags specific tools on this server with coarse risk
+    # categories (e.g. "external_send", "credential_access") that OPA's
+    # provenance policy denies outright once ANY earlier call in the same
+    # causal trace pulled untrusted content — see mcp_proxy_service and
+    # policies/authz.rego.
     mcp_bindings = Column(JSONB, nullable=True, default=list)
 
     # Which human operator activated this agent — the anchor for "on
