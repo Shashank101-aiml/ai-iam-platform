@@ -21,7 +21,7 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
     <div>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-8">
         <div>
-          <h2 className="font-outfit text-2xl md:text-3xl font-bold text-white">
+          <h2 className="font-outfit text-2xl md:text-3xl font-bold text-ink-900">
             Autonomous Agent Hierarchy
           </h2>
           <p className="text-text-muted text-sm mt-1">
@@ -29,7 +29,7 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
           </p>
         </div>
         <button onClick={onRefresh} className="btn-secondary flex items-center gap-2 self-start">
-          <RefreshCw size={16} className="text-cyan-glow" />
+          <RefreshCw size={16} className="text-brand-red" />
           <span>Refresh Cluster State</span>
         </button>
       </div>
@@ -61,10 +61,10 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
                           : 'bg-amber-500/15 border border-amber-500/40'
                       }`}
                     >
-                      <Cpu size={22} className={isActive ? 'text-emerald-400' : 'text-amber-400'} />
+                      <Cpu size={22} className={isActive ? 'text-emerald-600' : 'text-amber-600'} />
                     </div>
                     <div>
-                      <h3 className="font-outfit text-lg font-semibold text-white">
+                      <h3 className="font-outfit text-lg font-semibold text-ink-900">
                         {agent.name}
                       </h3>
                       <span className="font-mono text-xs text-text-muted">
@@ -78,20 +78,20 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
                   </span>
                 </div>
 
-                <p className="text-sm text-slate-300 mb-5 leading-relaxed">
+                <p className="text-sm text-slate-600 mb-5 leading-relaxed">
                   {agent.description || 'No description provided.'}
                 </p>
 
                 {/* Format-checked identifier, not a cryptographic attestation
                     — see backend/app/core/spiffe.py's module docstring (Slice 16). */}
-                <div className="bg-bg-deep/70 p-3.5 rounded-lg border border-white/5 mb-5">
+                <div className="bg-surface-100 p-3.5 rounded-lg border border-slate-200 mb-5">
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <Shield size={14} className="text-cyan-glow" />
+                    <Shield size={14} className="text-brand-red" />
                     <span className="text-xs font-semibold text-text-muted uppercase">
                       SPIFFE-style Identifier
                     </span>
                   </div>
-                  <div className={`font-mono text-sm break-all ${agent.spiffe_id ? 'text-cyan-glow' : 'text-slate-500'}`}>
+                  <div className={`font-mono text-sm break-all ${agent.spiffe_id ? 'text-brand-red' : 'text-slate-400'}`}>
                     {agent.spiffe_id || 'Not assigned (activate the agent to assign one)'}
                   </div>
                 </div>
@@ -105,7 +105,7 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
                     {agent.allowed_scopes?.map((scope, idx) => (
                       <span
                         key={idx}
-                        className="font-mono text-xs bg-cyan-glow/8 text-slate-200 border border-cyan-glow/20 px-2 py-1 rounded-md"
+                        className="font-mono text-xs bg-brand-red/8 text-slate-700 border border-brand-red/20 px-2 py-1 rounded-md"
                       >
                         {scope}
                       </span>
@@ -115,7 +115,7 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 border-t border-white/10 pt-4">
+              <div className="flex gap-3 border-t border-slate-200 pt-4">
                 {!isActive ? (
                   <button
                     onClick={() => handleActivate(agent.id)}

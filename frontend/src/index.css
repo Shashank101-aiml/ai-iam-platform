@@ -15,20 +15,30 @@
  * neutrals.
  */
 @theme {
-  /* Dark dashboard surfaces — unchanged from the original :root block */
+  /* --color-bg-deep/-ocean are kept at their original dark values on
+     purpose — bg-deep is still used as the ApiKeyModal's full-screen
+     scrim (bg-bg-deep/85), which should stay a dark dimming overlay
+     regardless of theme, and bg-ocean only ever appears in the plain
+     dark body{} gradient below, which the dashboard/login pages now
+     opt out of via body.on-light-surface. */
   --color-bg-deep: #060b19;
   --color-bg-ocean: #0a1128;
-  --color-bg-card: rgba(16, 26, 56, 0.65);
-  --color-bg-card-hover: rgba(22, 36, 76, 0.85);
-  --color-border-glass: rgba(0, 245, 255, 0.18);
-  --color-border-accent: rgba(0, 245, 255, 0.45);
+  /* .glass-panel fill — now a flat white console card, not a dark
+     glass tint (see the reskin comment on .glass-panel below). */
+  --color-bg-card: #ffffff;
+  --color-bg-card-hover: #f8fafc;
+  /* Plain light-neutral card border / red-tinted accent border —
+     replaces the old cyan-tinted translucent glass borders, which
+     only ever read correctly against a dark background. */
+  --color-border-glass: #e2e8f0;
+  --color-border-accent: rgba(200, 16, 46, 0.4);
   --color-cyan-glow: #00f5ff;
   --color-sapphire: #1e3a8a;
   --color-emerald: #10b981;
   --color-amber: #f59e0b;
   --color-rose: #f43f5e;
   --color-text-main: #f8fafc;
-  --color-text-muted: #94a3b8;
+  --color-text-muted: #64748b;
 
   /* Light marketing surfaces — new */
   --color-surface-50: #f8fafc;
@@ -41,6 +51,18 @@
      effects (buttons, badges, hash-chain highlights), unchanged. */
   --color-brand-600: #0891b2;
   --color-brand-700: #0e7490;
+
+  /* Dashboard console accent (white + red reskin) — deliberately its
+     own token, not a repaint of --color-cyan-glow: the shield-logo
+     gradient (from-cyan-glow to-sapphire) is shared verbatim by the
+     Navbar, LoginPage, and the landing Footer, and must keep rendering
+     identically everywhere as one consistent brand mark. This is the
+     single interactive accent for the reskinned console (buttons,
+     active nav/tab state, focus rings, code/hash highlighting) —
+     visually distinct from --color-rose so "brand accent" is never
+     confused with "error/danger state". */
+  --color-brand-red: #c8102e;
+  --color-brand-red-dark: #a50e27;
 
   /* Already-loaded fonts (see the Google Fonts links in index.html) —
      wiring them in here makes them real Tailwind utilities
@@ -109,21 +131,22 @@ h1, h2, h3, h4, .font-outfit {
     font-family: 'JetBrains Mono', monospace;
   }
 
-  /* Glassmorphism Card Utility — unchanged, still used everywhere in
-     the dashboard exactly as before Tailwind was introduced. */
+  /* Console card utility — reskinned from a dark glassmorphism tint to
+     a flat white card with a soft shadow (blur reads as "foggy," not
+     "premium," on a white background); the class name stays
+     `.glass-panel` since renaming it would mean touching ~40+ call
+     sites for a cosmetic-only concern. */
   .glass-panel {
     background: var(--color-bg-card);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--color-border-glass);
     border-radius: 14px;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
     transition: all 0.25s ease;
   }
 
   .glass-panel:hover {
     border-color: var(--color-border-accent);
-    box-shadow: 0 8px 32px 0 rgba(0, 245, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
   }
 
   .glow-cyan {
@@ -131,25 +154,25 @@ h1, h2, h3, h4, .font-outfit {
   }
 
   .btn-primary {
-    background: linear-gradient(90deg, #00f5ff 0%, #0284c7 100%);
-    color: #060b19;
+    background: linear-gradient(90deg, var(--color-brand-red) 0%, var(--color-brand-red-dark) 100%);
+    color: #ffffff;
     font-weight: 600;
     padding: 0.6rem 1.25rem;
     border-radius: 8px;
     border: none;
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.2s ease;
-    box-shadow: 0 0 15px rgba(0, 245, 255, 0.3);
+    box-shadow: 0 1px 2px rgba(200, 16, 46, 0.25);
   }
 
   .btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 0 22px rgba(0, 245, 255, 0.55);
+    box-shadow: 0 4px 12px rgba(200, 16, 46, 0.35);
   }
 
   .btn-secondary {
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--color-text-main);
+    background: var(--color-surface-100);
+    color: var(--color-ink-900);
     border: 1px solid var(--color-border-glass);
     padding: 0.6rem 1.25rem;
     border-radius: 8px;
@@ -159,8 +182,8 @@ h1, h2, h3, h4, .font-outfit {
   }
 
   .btn-secondary:hover {
-    background: rgba(0, 245, 255, 0.12);
-    border-color: var(--color-cyan-glow);
+    background: rgba(200, 16, 46, 0.08);
+    border-color: var(--color-brand-red);
   }
 
   /* Status Badges */
@@ -176,28 +199,31 @@ h1, h2, h3, h4, .font-outfit {
     text-transform: uppercase;
   }
 
+  /* Status badge shades were tuned as light-text-on-dark-background;
+     reskinned to dark-text-on-light-background for the same emerald/
+     amber/rose semantics on white cards. */
   .badge-active {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.35);
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
   }
 
   .badge-pending {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.35);
+    background: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fde68a;
   }
 
   .badge-suspended {
-    background: rgba(244, 63, 94, 0.15);
-    color: #fb7185;
-    border: 1px solid rgba(244, 63, 94, 0.35);
+    background: #fff1f2;
+    color: #be123c;
+    border: 1px solid #fecdd3;
   }
 
   .badge-cyan {
-    background: rgba(0, 245, 255, 0.12);
-    color: var(--color-cyan-glow);
-    border: 1px solid rgba(0, 245, 255, 0.35);
+    background: rgba(200, 16, 46, 0.08);
+    color: var(--color-brand-red);
+    border: 1px solid rgba(200, 16, 46, 0.3);
   }
 
   @keyframes pulseGlow {

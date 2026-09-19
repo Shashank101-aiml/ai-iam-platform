@@ -39,6 +39,13 @@ export default function DashboardPage() {
       .catch((err) => console.error('Failed to load operator identity:', err));
   }, []);
 
+  // Dashboard reskin: same light console surface as the landing/login
+  // pages, toggled the same way (see LandingPage.jsx/LoginPage.jsx).
+  useEffect(() => {
+    document.body.classList.add('on-light-surface');
+    return () => document.body.classList.remove('on-light-surface');
+  }, []);
+
   // Initial Data Fetch
   useEffect(() => {
     fetchDashboardData();
@@ -115,17 +122,17 @@ export default function DashboardPage() {
         <main className="flex-1 p-4 md:p-8 max-w-[1400px] mx-auto w-full">
           {loading ? (
             <div className="flex justify-center items-center h-[60vh]">
-              <div className="animate-pulse-glow text-xl text-cyan-glow">
+              <div className="animate-pulse-glow text-xl text-brand-red">
                 ⚡ Synchronizing with AI-IAM Governance Cluster...
               </div>
             </div>
           ) : loadError ? (
             <div
-              className="glass-panel flex flex-col items-center gap-4 p-12 mt-8 border border-rose"
+              className="glass-panel flex flex-col items-center gap-4 p-12 mt-8 border border-rose-300"
               role="alert"
             >
-              <AlertOctagon size={40} className="text-rose" />
-              <div className="text-lg font-semibold text-center" style={{ color: '#fb7185' }}>
+              <AlertOctagon size={40} className="text-rose-600" />
+              <div className="text-lg font-semibold text-center" style={{ color: '#be123c' }}>
                 Backend unreachable
               </div>
               <div className="font-mono text-sm text-text-muted text-center max-w-[48ch]">

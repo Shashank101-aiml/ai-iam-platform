@@ -49,26 +49,26 @@ export default function LoginPage() {
             <ShieldCheck size={22} className="text-bg-deep" strokeWidth={2.5} />
           </div>
           <span className="font-outfit text-lg font-bold text-ink-900">
-            AI-IAM <span className="text-brand-600">PLATFORM</span>
+            AI-IAM <span className="text-brand-red">PLATFORM</span>
           </span>
         </Link>
 
-        <div className="glass-panel p-8" style={{ background: 'rgba(10, 17, 40, 0.95)' }}>
-          <h1 className="font-outfit text-2xl font-bold text-white mb-1">Operator sign-in</h1>
+        <div className="glass-panel p-8">
+          <h1 className="font-outfit text-2xl font-bold text-ink-900 mb-1">Operator sign-in</h1>
           <p className="text-sm text-text-muted mb-6">
             Sign in to manage agents, delegation chains, and the audit ledger.
           </p>
 
           {error && (
-            <div className="glass-panel flex items-start gap-3 p-4 mb-5 border border-rose" role="alert">
-              <AlertOctagon size={20} className="text-rose shrink-0 mt-0.5" />
-              <div className="font-mono text-sm" style={{ color: '#fb7185' }}>{error}</div>
+            <div className="glass-panel flex items-start gap-3 p-4 mb-5 border border-rose-300" style={{ background: '#fff1f2' }} role="alert">
+              <AlertOctagon size={20} className="text-rose-600 shrink-0 mt-0.5" />
+              <div className="font-mono text-sm" style={{ color: '#be123c' }}>{error}</div>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-slate-200 mb-1.5">
+              <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-1.5">
                 Email
               </label>
               <input
@@ -79,11 +79,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@acmecorp.ai"
-                className="w-full p-3 rounded-lg bg-bg-deep border border-border-glass text-white text-sm outline-none focus:border-cyan-glow"
+                className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-sm outline-none focus:border-brand-red"
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-slate-200 mb-1.5">
+              <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-1.5">
                 Password
               </label>
               <input
@@ -94,7 +94,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full p-3 rounded-lg bg-bg-deep border border-border-glass text-white text-sm outline-none focus:border-cyan-glow"
+                className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-sm outline-none focus:border-brand-red"
               />
             </div>
 

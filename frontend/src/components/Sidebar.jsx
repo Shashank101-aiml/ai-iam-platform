@@ -16,7 +16,7 @@ export default function Sidebar({ activeTab, onTabChange, isOpen, onClose }) {
           <span className="text-xs font-bold uppercase tracking-[0.1em] text-text-muted">
             Governance Modules
           </span>
-          <button onClick={onClose} className="text-text-muted hover:text-white" aria-label="Close menu">
+          <button onClick={onClose} className="text-text-muted hover:text-ink-900" aria-label="Close menu">
             <X size={20} />
           </button>
         </div>
@@ -33,17 +33,17 @@ export default function Sidebar({ activeTab, onTabChange, isOpen, onClose }) {
                 onClick={() => onTabChange(item.id)}
                 className={`flex items-center justify-between px-3.5 py-3 rounded-[10px] text-left text-[0.88rem] transition-all ${
                   isActive
-                    ? 'bg-cyan-glow/15 border border-border-accent text-white font-semibold'
-                    : 'border border-transparent text-text-muted font-medium hover:bg-white/5'
+                    ? 'bg-brand-red/8 border border-border-accent text-ink-900 font-semibold'
+                    : 'border border-transparent text-text-muted font-medium hover:bg-slate-100'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon size={18} className={isActive ? 'text-cyan-glow' : 'text-text-muted'} />
+                  <Icon size={18} className={isActive ? 'text-brand-red' : 'text-text-muted'} />
                   <span>{item.label}</span>
                 </div>
                 <span
                   className={`text-[0.65rem] px-1.5 py-0.5 rounded font-bold ${
-                    isActive ? 'bg-cyan-glow text-bg-deep' : 'bg-white/5 text-text-muted'
+                    isActive ? 'bg-brand-red text-white' : 'bg-slate-100 text-text-muted'
                   }`}
                 >
                   {item.badge}
@@ -54,12 +54,12 @@ export default function Sidebar({ activeTab, onTabChange, isOpen, onClose }) {
         </nav>
       </div>
 
-      <div className="glass-panel mt-auto p-4 rounded-[10px]" style={{ background: 'rgba(10, 17, 40, 0.8)', border: '1px solid rgba(0, 245, 255, 0.15)' }}>
+      <div className="glass-panel mt-auto p-4 rounded-[10px]" style={{ background: 'var(--color-surface-100)', border: '1px solid var(--color-border-glass)' }}>
         <div className="flex items-center gap-2 mb-1.5">
-          <Layers size={16} className="text-cyan-glow" />
-          <span className="text-sm font-semibold text-white">Agent Identifier Namespace</span>
+          <Layers size={16} className="text-brand-red" />
+          <span className="text-sm font-semibold text-ink-900">Agent Identifier Namespace</span>
         </div>
-        <p className="font-mono text-xs text-cyan-glow break-all">
+        <p className="font-mono text-xs text-brand-red break-all">
           spiffe://ai-iam.internal
         </p>
         {/* No SPIRE server, no X.509 cert, no mTLS — this is a

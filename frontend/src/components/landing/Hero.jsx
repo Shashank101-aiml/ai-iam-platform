@@ -36,12 +36,33 @@ export default function Hero() {
           every action it takes is provably accountable.
         </p>
 
+        {/* Deliberately not using the shared .btn-primary/.btn-secondary
+            classes here — those were repointed to the dashboard's red
+            reskin, and this hero (unlike ProductPreview, which is
+            meant to mirror the real dashboard) keeps its original
+            cyan-on-dark look, independent of that change. */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link to="/login" className="btn-primary flex items-center gap-2 px-6 py-3 text-base">
+          <Link
+            to="/login"
+            className="flex items-center gap-2 px-6 py-3 text-base font-semibold rounded-lg"
+            style={{
+              background: 'linear-gradient(90deg, #00f5ff 0%, #0284c7 100%)',
+              color: '#060b19',
+              boxShadow: '0 0 15px rgba(0, 245, 255, 0.3)',
+            }}
+          >
             <span>Sign in to Dashboard</span>
             <ArrowRight size={18} />
           </Link>
-          <a href="#architecture" className="btn-secondary px-6 py-3 text-base">
+          <a
+            href="#architecture"
+            className="px-6 py-3 text-base font-medium rounded-lg"
+            style={{
+              background: 'rgba(255, 255, 255, 0.06)',
+              color: '#f8fafc',
+              border: '1px solid rgba(0, 245, 255, 0.18)',
+            }}
+          >
             View Architecture
           </a>
         </div>

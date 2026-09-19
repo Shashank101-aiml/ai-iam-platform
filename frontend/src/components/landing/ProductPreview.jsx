@@ -33,7 +33,7 @@ export default function ProductPreview() {
           <span className="ml-3 text-xs text-ink-600 font-mono">ai-iam.internal/dashboard</span>
         </div>
 
-        <div className="p-6" style={{ background: 'linear-gradient(135deg, #060b19 0%, #0a1128 60%, #0d1b3e 100%)' }}>
+        <div className="p-6" style={{ background: 'var(--color-surface-50)' }}>
           <div className="flex gap-3 overflow-x-auto">
             {MOCK_AGENTS.map((agent) => {
               const isActive = agent.status === 'ACTIVE';
@@ -44,17 +44,17 @@ export default function ProductPreview() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-500/15' : 'bg-amber-500/15'}`}>
-                      <Cpu size={16} className={isActive ? 'text-emerald-400' : 'text-amber-400'} />
+                      <Cpu size={16} className={isActive ? 'text-emerald-600' : 'text-amber-600'} />
                     </div>
                     <span className={`badge ${isActive ? 'badge-active' : 'badge-pending'} text-[0.6rem]`}>
                       {isActive ? <CheckCircle size={10} /> : <Clock size={10} />}
                       {agent.status}
                     </span>
                   </div>
-                  <div className="font-outfit text-sm font-semibold text-white mb-2">{agent.name}</div>
+                  <div className="font-outfit text-sm font-semibold text-ink-900 mb-2">{agent.name}</div>
                   <div className="flex flex-wrap gap-1 mb-3">
                     {agent.scopes.map((s) => (
-                      <span key={s} className="font-mono text-[0.62rem] bg-cyan-glow/10 text-cyan-glow px-1.5 py-0.5 rounded">
+                      <span key={s} className="font-mono text-[0.62rem] bg-brand-red/8 text-brand-red px-1.5 py-0.5 rounded">
                         {s}
                       </span>
                     ))}
