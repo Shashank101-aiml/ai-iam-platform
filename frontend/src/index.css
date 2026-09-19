@@ -1,4 +1,21 @@
-:root {
+@import "tailwindcss";
+
+/*
+ * Design tokens (Tailwind v4 CSS-first config — no tailwind.config.js
+ * needed). Everything in @theme becomes BOTH a real CSS custom
+ * property (usable as var(--color-bg-deep) exactly like before) AND a
+ * generated Tailwind utility class (bg-bg-deep, text-cyan-glow, etc.)
+ * — this is a move, not a duplication, of the values that used to
+ * live in a plain :root block.
+ *
+ * Two accent families, one dark, one light — this app now spans both:
+ * the existing dark dashboard (unchanged values, zero visual risk to
+ * working screens) and the new light marketing landing page, which
+ * needed its own readable-on-white accent plus real light-surface
+ * neutrals.
+ */
+@theme {
+  /* Dark dashboard surfaces — unchanged from the original :root block */
   --color-bg-deep: #060b19;
   --color-bg-ocean: #0a1128;
   --color-bg-card: rgba(16, 26, 56, 0.65);
@@ -12,13 +29,47 @@
   --color-rose: #f43f5e;
   --color-text-main: #f8fafc;
   --color-text-muted: #94a3b8;
+
+  /* Light marketing surfaces — new */
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #eef2f7;
+  --color-ink-900: #0f172a;
+  --color-ink-600: #475569;
+
+  /* Toned-down accent for readability on light backgrounds — the neon
+     --color-cyan-glow above stays reserved for dark-surface glow
+     effects (buttons, badges, hash-chain highlights), unchanged. */
+  --color-brand-600: #0891b2;
+  --color-brand-700: #0e7490;
+
+  /* Already-loaded fonts (see the Google Fonts links in index.html) —
+     wiring them in here makes them real Tailwind utilities
+     (font-sans/font-display/font-mono) for new components, while
+     .font-outfit/.font-mono below keep existing components working
+     completely unchanged. */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Matches the exact radii the hand-written glass-panel, btn, and
+     badge classes below already use, so new Tailwind-authored
+     components line up with restyled ones pixel-for-pixel. */
+  --radius-glass: 14px;
+  --radius-btn: 8px;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* The plain universal reset (box-sizing, margin, padding) that used to
+   sit here was deliberately removed, not forgotten. It was written
+   outside any at-layer block, and per the CSS cascade layers spec, an
+   unlayered style always beats a layered style regardless of
+   specificity. That meant it was unconditionally zeroing out padding
+   and margin on every element, including every Tailwind spacing
+   utility and every hand-written component class below. Confirmed
+   live: a landing-page button computed to zero padding despite having
+   both a component class and Tailwind padding utilities applied.
+   Tailwind own Preflight reset, pulled in by the import at the top of
+   this file, already covers the same ground, correctly scoped inside
+   its own layer where normal cascade rules apply again. */
 
 body {
   background: linear-gradient(135deg, var(--color-bg-deep) 0%, var(--color-bg-ocean) 50%, #0d1b3e 100%);
@@ -29,102 +80,134 @@ body {
   overflow-x: hidden;
 }
 
+/* The landing/login pages sit on a light surface, not the dark
+   dashboard gradient — this class overrides the body background and
+   text color for just those routes, leaving the dashboard default alone. */
+body.on-light-surface {
+  background: var(--color-surface-50);
+  color: var(--color-ink-900);
+}
+
 h1, h2, h3, h4, .font-outfit {
   font-family: 'Outfit', sans-serif;
 }
 
-.font-mono {
-  font-family: 'JetBrains Mono', monospace;
-}
+/*
+ * Everything below is wrapped in @layer components — Tailwind cascade
+ * layers put components before utilities, so any plain Tailwind
+ * utility class (bg-*, text-*, p-*, etc.) applied alongside one of
+ * these hand-written classes naturally wins on equal specificity, with
+ * no important-flag hacks needed (the landing page product-preview
+ * mockup shrinks the badge and primary-button classes with plain
+ * text-size and padding utilities this way). Unlayered CSS always
+ * beats layered CSS regardless of specificity, so leaving these
+ * unlayered as they originally were would have made every later
+ * utility override silently lose.
+ */
+@layer components {
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
 
-/* Glassmorphism Card Utility */
-.glass-panel {
-  background: var(--color-bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--color-border-glass);
-  border-radius: 14px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  transition: all 0.25s ease;
-}
+  /* Glassmorphism Card Utility — unchanged, still used everywhere in
+     the dashboard exactly as before Tailwind was introduced. */
+  .glass-panel {
+    background: var(--color-bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--color-border-glass);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    transition: all 0.25s ease;
+  }
 
-.glass-panel:hover {
-  border-color: var(--color-border-accent);
-  box-shadow: 0 8px 32px 0 rgba(0, 245, 255, 0.12);
-}
+  .glass-panel:hover {
+    border-color: var(--color-border-accent);
+    box-shadow: 0 8px 32px 0 rgba(0, 245, 255, 0.12);
+  }
 
-.glow-cyan {
-  text-shadow: 0 0 12px rgba(0, 245, 255, 0.65);
-}
+  .glow-cyan {
+    text-shadow: 0 0 12px rgba(0, 245, 255, 0.65);
+  }
 
-.btn-primary {
-  background: linear-gradient(90deg, #00f5ff 0%, #0284c7 100%);
-  color: #060b19;
-  font-weight: 600;
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.2s ease;
-  box-shadow: 0 0 15px rgba(0, 245, 255, 0.3);
-}
+  .btn-primary {
+    background: linear-gradient(90deg, #00f5ff 0%, #0284c7 100%);
+    color: #060b19;
+    font-weight: 600;
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.2s ease;
+    box-shadow: 0 0 15px rgba(0, 245, 255, 0.3);
+  }
 
-.btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 22px rgba(0, 245, 255, 0.55);
-}
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 22px rgba(0, 245, 255, 0.55);
+  }
 
-.btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-text-main);
-  border: 1px solid var(--color-border-glass);
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border-glass);
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
 
-.btn-secondary:hover {
-  background: rgba(0, 245, 255, 0.12);
-  border-color: var(--color-cyan-glow);
-}
+  .btn-secondary:hover {
+    background: rgba(0, 245, 255, 0.12);
+    border-color: var(--color-cyan-glow);
+  }
 
-/* Status Badges */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.65rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
-}
+  /* Status Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
 
-.badge-active {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.35);
-}
+  .badge-active {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+  }
 
-.badge-pending {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-}
+  .badge-pending {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+  }
 
-.badge-suspended {
-  background: rgba(244, 63, 94, 0.15);
-  color: #fb7185;
-  border: 1px solid rgba(244, 63, 94, 0.35);
-}
+  .badge-suspended {
+    background: rgba(244, 63, 94, 0.15);
+    color: #fb7185;
+    border: 1px solid rgba(244, 63, 94, 0.35);
+  }
 
-.badge-cyan {
-  background: rgba(0, 245, 255, 0.12);
-  color: var(--color-cyan-glow);
-  border: 1px solid rgba(0, 245, 255, 0.35);
+  .badge-cyan {
+    background: rgba(0, 245, 255, 0.12);
+    color: var(--color-cyan-glow);
+    border: 1px solid rgba(0, 245, 255, 0.35);
+  }
+
+  @keyframes pulseGlow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  .animate-pulse-glow {
+    animation: pulseGlow 2.5s infinite ease-in-out;
+  }
 }
 
 /* Custom Scrollbars */
@@ -144,13 +227,4 @@ h1, h2, h3, h4, .font-outfit {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-cyan-glow);
-}
-
-@keyframes pulseGlow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
-}
-
-.animate-pulse-glow {
-  animation: pulseGlow 2.5s infinite ease-in-out;
 }

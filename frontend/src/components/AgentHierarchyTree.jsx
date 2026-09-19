@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Cpu, Key, Shield, CheckCircle, Clock, AlertCircle, Terminal, Plus, RefreshCw } from 'lucide-react';
+import { Cpu, Key, Shield, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { apiService } from '../services/api.js';
 
 export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }) {
@@ -19,62 +19,55 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-8">
         <div>
-          <h2 className="font-outfit" style={{ fontSize: '1.75rem', fontWeight: 700, color: '#fff' }}>
+          <h2 className="font-outfit text-2xl md:text-3xl font-bold text-white">
             Autonomous Agent Hierarchy
           </h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Two-Phase Workload Identity Lifecycle (`PENDING` $\rightarrow$ `ACTIVE`) with Zero-Downtime Key Rotation
+          <p className="text-text-muted text-sm mt-1">
+            Two-Phase Workload Identity Lifecycle (`PENDING` → `ACTIVE`) with Zero-Downtime Key Rotation
           </p>
         </div>
-        <button
-          onClick={onRefresh}
-          className="btn-secondary"
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-        >
-          <RefreshCw size={16} color="#00f5ff" />
+        <button onClick={onRefresh} className="btn-secondary flex items-center gap-2 self-start">
+          <RefreshCw size={16} className="text-cyan-glow" />
           <span>Refresh Cluster State</span>
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '1.5rem' }}>
+      <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
         {agents.map((agent) => {
-          const isActive = agent.status === 'ACTIVE';
+          // Pre-existing bug, found live during the frontend overhaul's
+          // verification pass and fixed here (not introduced by the
+          // restyle): the backend's AgentStatus enum serializes as
+          // lowercase ("active"), but this comparison checked for the
+          // uppercase display string instead — every real agent was
+          // silently treated as pending, so "Issue API Key" could never
+          // actually appear for an active agent.
+          const isActive = agent.status?.toLowerCase() === 'active';
           return (
             <div
               key={agent.id}
-              className="glass-panel"
-              style={{
-                padding: '1.5rem',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                borderLeft: isActive ? '4px solid #10b981' : '4px solid #f59e0b',
-              }}
+              className={`glass-panel p-6 flex flex-col justify-between border-l-4 ${
+                isActive ? 'border-l-emerald-500' : 'border-l-amber-500'
+              }`}
             >
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-3">
                     <div
-                      style={{
-                        width: '44px',
-                        height: '44px',
-                        borderRadius: '12px',
-                        background: isActive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                        border: `1px solid ${isActive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
+                      className={`w-11 h-11 rounded-xl flex items-center justify-center ${
+                        isActive
+                          ? 'bg-emerald-500/15 border border-emerald-500/40'
+                          : 'bg-amber-500/15 border border-amber-500/40'
+                      }`}
                     >
-                      <Cpu size={22} color={isActive ? '#34d399' : '#fbbf24'} />
+                      <Cpu size={22} className={isActive ? 'text-emerald-400' : 'text-amber-400'} />
                     </div>
                     <div>
-                      <h3 className="font-outfit" style={{ fontSize: '1.15rem', fontWeight: 600, color: '#fff' }}>
+                      <h3 className="font-outfit text-lg font-semibold text-white">
                         {agent.name}
                       </h3>
-                      <span className="font-mono" style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                      <span className="font-mono text-xs text-text-muted">
                         ID: {agent.id.substring(0, 12)}...
                       </span>
                     </div>
@@ -85,50 +78,34 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
                   </span>
                 </div>
 
-                <p style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+                <p className="text-sm text-slate-300 mb-5 leading-relaxed">
                   {agent.description || 'No description provided.'}
                 </p>
 
                 {/* Format-checked identifier, not a cryptographic attestation
                     — see backend/app/core/spiffe.py's module docstring (Slice 16). */}
-                <div
-                  style={{
-                    background: 'rgba(6, 11, 25, 0.7)',
-                    padding: '0.85rem',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    marginBottom: '1.25rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                    <Shield size={14} color="#00f5ff" />
-                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
+                <div className="bg-bg-deep/70 p-3.5 rounded-lg border border-white/5 mb-5">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Shield size={14} className="text-cyan-glow" />
+                    <span className="text-xs font-semibold text-text-muted uppercase">
                       SPIFFE-style Identifier
                     </span>
                   </div>
-                  <div className="font-mono" style={{ fontSize: '0.75rem', color: agent.spiffe_id ? '#00f5ff' : '#64748b', wordBreak: 'break-all' }}>
+                  <div className={`font-mono text-sm break-all ${agent.spiffe_id ? 'text-cyan-glow' : 'text-slate-500'}`}>
                     {agent.spiffe_id || 'Not assigned (activate the agent to assign one)'}
                   </div>
                 </div>
 
                 {/* Scopes & Max Depth Info */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                <div className="mb-6">
+                  <div className="text-xs font-semibold text-text-muted uppercase mb-2">
                     Assigned ReBAC Scopes ({agent.allowed_scopes?.length || 0}) • Max Depth: {agent.max_delegation_depth}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <div className="flex flex-wrap gap-1.5">
                     {agent.allowed_scopes?.map((scope, idx) => (
                       <span
                         key={idx}
-                        className="font-mono"
-                        style={{
-                          background: 'rgba(0, 245, 255, 0.08)',
-                          color: '#e2e8f0',
-                          border: '1px solid rgba(0, 245, 255, 0.2)',
-                          padding: '0.2rem 0.55rem',
-                          borderRadius: '6px',
-                          fontSize: '0.72rem',
-                        }}
+                        className="font-mono text-xs bg-cyan-glow/8 text-slate-200 border border-cyan-glow/20 px-2 py-1 rounded-md"
                       >
                         {scope}
                       </span>
@@ -138,13 +115,12 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1rem' }}>
+              <div className="flex gap-3 border-t border-white/10 pt-4">
                 {!isActive ? (
                   <button
                     onClick={() => handleActivate(agent.id)}
                     disabled={activatingId === agent.id}
-                    className="btn-primary"
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '0.85rem' }}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
                   >
                     <Shield size={16} />
                     <span>{activatingId === agent.id ? 'Attesting...' : 'Activate SPIFFE ID'}</span>
@@ -152,8 +128,7 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
                 ) : (
                   <button
                     onClick={() => onOpenKeyModal(agent)}
-                    className="btn-primary"
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '0.85rem' }}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
                   >
                     <Key size={16} />
                     <span>Issue Zero-Downtime API Key</span>

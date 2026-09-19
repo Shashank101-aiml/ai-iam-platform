@@ -3,12 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="AI-IAM Platform — identity, credential-lifecycle, ReBAC authorization, and tamper-evident audit for autonomous AI agents." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>AI-IAM Platform | Auth0 for AI Agents</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-dark-ocean text-slate-100 antialiased font-inter">
+  <!-- No Tailwind-esque classes here (Slice: frontend overhaul) — the old
+       "bg-dark-ocean text-slate-100 antialiased font-inter" classes did
+       nothing at all, since no Tailwind was installed when they were
+       written. body's actual background/text come from index.css's own
+       `body { }` rule (dark dashboard) or `body.on-light-surface` (landing/login). -->
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

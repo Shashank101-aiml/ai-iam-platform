@@ -30,3 +30,8 @@ Thumbs.db
 
 # ── Docker ───────────────────────────────────────────────────────────────
 docker/postgres_data/
+# Local host-port remaps for machines with pre-existing conflicts on
+# this stack's default ports (e.g. a native Postgres install already
+# on 5432, another project's server already on 8000) — never the
+# tracked, verified port mapping other tooling/docs assume.
+docker/docker-compose.override.yml

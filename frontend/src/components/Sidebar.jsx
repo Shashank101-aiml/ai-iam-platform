@@ -1,7 +1,7 @@
 import React from 'react';
-import { Cpu, GitBranch, ShieldAlert, Terminal, Layers } from 'lucide-react';
+import { Cpu, GitBranch, ShieldAlert, Terminal, Layers, X } from 'lucide-react';
 
-export default function Sidebar({ activeTab, onTabChange }) {
+export default function Sidebar({ activeTab, onTabChange, isOpen, onClose }) {
   const navItems = [
     { id: 'agents', label: 'Agent Hierarchy Tree', icon: Cpu, badge: 'Phase 1-3' },
     { id: 'delegation', label: 'Multi-Hop Delegation', icon: GitBranch, badge: 'ReBAC' },
@@ -9,37 +9,21 @@ export default function Sidebar({ activeTab, onTabChange }) {
     { id: 'mcp', label: 'Pre-Execution Proxy', icon: Terminal, badge: 'OPA Deny' },
   ];
 
-  return (
-    <aside
-      className="glass-panel"
-      style={{
-        width: '260px',
-        borderRight: '1px solid var(--color-border-glass)',
-        borderTop: 'none',
-        borderBottom: 'none',
-        borderLeft: 'none',
-        borderRadius: 0,
-        padding: '1.5rem 1rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2rem',
-      }}
-    >
+  const content = (
+    <>
       <div>
-        <div
-          style={{
-            fontSize: '0.7rem',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            color: 'var(--color-text-muted)',
-            marginBottom: '0.75rem',
-            paddingLeft: '0.5rem',
-          }}
-        >
+        <div className="flex items-center justify-between mb-3 pl-2 md:hidden">
+          <span className="text-xs font-bold uppercase tracking-[0.1em] text-text-muted">
+            Governance Modules
+          </span>
+          <button onClick={onClose} className="text-text-muted hover:text-white" aria-label="Close menu">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="hidden md:block text-xs font-bold uppercase tracking-[0.1em] text-text-muted mb-3 pl-2">
           Governance Modules
         </div>
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <nav className="flex flex-col gap-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -47,35 +31,20 @@ export default function Sidebar({ activeTab, onTabChange }) {
               <button
                 key={item.id}
                 onClick={() => onTabChange(item.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.75rem 0.85rem',
-                  borderRadius: '10px',
-                  background: isActive ? 'rgba(0, 245, 255, 0.15)' : 'transparent',
-                  border: isActive ? '1px solid var(--color-border-accent)' : '1px solid transparent',
-                  color: isActive ? '#fff' : 'var(--color-text-muted)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  textAlign: 'left',
-                  fontSize: '0.88rem',
-                  fontWeight: isActive ? 600 : 500,
-                }}
+                className={`flex items-center justify-between px-3.5 py-3 rounded-[10px] text-left text-[0.88rem] transition-all ${
+                  isActive
+                    ? 'bg-cyan-glow/15 border border-border-accent text-white font-semibold'
+                    : 'border border-transparent text-text-muted font-medium hover:bg-white/5'
+                }`}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <Icon size={18} color={isActive ? '#00f5ff' : '#94a3b8'} />
+                <div className="flex items-center gap-3">
+                  <Icon size={18} className={isActive ? 'text-cyan-glow' : 'text-text-muted'} />
                   <span>{item.label}</span>
                 </div>
                 <span
-                  style={{
-                    fontSize: '0.65rem',
-                    padding: '0.15rem 0.45rem',
-                    borderRadius: '4px',
-                    background: isActive ? '#00f5ff' : 'rgba(255,255,255,0.06)',
-                    color: isActive ? '#060b19' : '#94a3b8',
-                    fontWeight: 700,
-                  }}
+                  className={`text-[0.65rem] px-1.5 py-0.5 rounded font-bold ${
+                    isActive ? 'bg-cyan-glow text-bg-deep' : 'bg-white/5 text-text-muted'
+                  }`}
                 >
                   {item.badge}
                 </span>
@@ -85,33 +54,41 @@ export default function Sidebar({ activeTab, onTabChange }) {
         </nav>
       </div>
 
-      <div
-        className="glass-panel"
-        style={{
-          marginTop: 'auto',
-          padding: '1rem',
-          background: 'rgba(10, 17, 40, 0.8)',
-          border: '1px solid rgba(0, 245, 255, 0.15)',
-          borderRadius: '10px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
-          <Layers size={16} color="#00f5ff" />
-          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f8fafc' }}>Agent Identifier Namespace</span>
+      <div className="glass-panel mt-auto p-4 rounded-[10px]" style={{ background: 'rgba(10, 17, 40, 0.8)', border: '1px solid rgba(0, 245, 255, 0.15)' }}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <Layers size={16} className="text-cyan-glow" />
+          <span className="text-sm font-semibold text-white">Agent Identifier Namespace</span>
         </div>
-        <p className="font-mono" style={{ fontSize: '0.72rem', color: '#00f5ff', wordBreak: 'break-all' }}>
+        <p className="font-mono text-xs text-cyan-glow break-all">
           spiffe://ai-iam.internal
         </p>
         {/* No SPIRE server, no X.509 cert, no mTLS — this is a
             format-checked identifier string, not a workload
             attestation (Slice 16; see backend/app/core/spiffe.py's
-            module docstring for the full explanation). The previous
-            "Workload mTLS Attestation Active" label here claimed a
-            security property this platform doesn't provide. */}
-        <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>
+            module docstring for the full explanation). */}
+        <div className="text-[0.68rem] text-text-muted mt-1.5">
           SPIFFE-style URI format, not certificate-based attestation
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop: static column */}
+      <aside className="hidden md:flex glass-panel w-[260px] rounded-none border-y-0 border-l-0 p-6 flex-col gap-8">
+        {content}
+      </aside>
+
+      {/* Mobile: slide-over drawer */}
+      {isOpen && (
+        <div className="md:hidden fixed inset-0 z-40 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+          <aside className="relative glass-panel w-[280px] max-w-[80vw] h-full p-6 flex flex-col gap-8 rounded-none">
+            {content}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

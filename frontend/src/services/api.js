@@ -45,6 +45,10 @@ async function requestJson(path, options = {}) {
 }
 
 export const apiService = {
+  async getCurrentUser() {
+    return requestJson('/auth/me', { headers: getHeaders() });
+  },
+
   async login(email, password) {
     const data = await requestJson('/auth/login', {
       method: 'POST',
