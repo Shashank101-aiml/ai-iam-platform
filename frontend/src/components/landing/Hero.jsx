@@ -18,7 +18,7 @@ export default function Hero() {
         <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 backdrop-blur-sm rounded-full px-4 py-1.5 mb-8">
           <ShieldCheck size={14} className="text-cyan-glow" />
           <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">
-            16 slices shipped · live-verified, not a design doc
+            23 slices shipped · live-verified, not a design doc
           </span>
         </div>
 

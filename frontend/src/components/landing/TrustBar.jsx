@@ -3,7 +3,7 @@ import React from 'react';
 // Real, honest numbers only — no fabricated customer counts or logos.
 // See README.md's own "Status" section for what each of these maps to.
 const STATS = [
-  { value: '16', label: 'slices shipped, live-verified' },
+  { value: '23', label: 'slices shipped, live-verified' },
   { value: 'SHA-256', label: 'hash-chained audit log' },
   { value: 'Fail-closed', label: 'OPA policy enforcement' },
   { value: 'Live', label: 'tested against real Postgres/OPA/Redis' },
