@@ -107,8 +107,28 @@ async def trial_signup(signup_in: TrialSignupRequest, db: AsyncSession = Depends
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Register a new human operator under an existing organization."""
+async def register(
+    user_in: UserCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Add a human operator to an organization. Requires an authenticated
+    operator: your own org for a regular operator, any org for a superuser.
+
+    This used to take no authentication at all, so anyone who knew an org's
+    UUID (they appear in SPIFFE ids, tokens and audit details) could add
+    themselves as an operator of that org and take over its agents and
+    keys. A caller naming an org that isn't theirs gets the same 404 as one
+    that doesn't exist, matching organizations.py — a 403 would confirm the
+    id is valid.
+    """
+    if user_in.org_id != current_user.org_id and not current_user.is_superuser:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    # A superuser can name any org, but a bogus id must be a 404, not the
+    # foreign-key error (HTTP 500) it used to surface as.
+    await org_service.get_or_404(db, user_in.org_id)
+
     user = await auth_service.create_user(
         db,
         email=user_in.email,
