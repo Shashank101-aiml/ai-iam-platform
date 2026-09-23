@@ -7,7 +7,7 @@
 [![Redis](https://img.shields.io/badge/Redis-Revocation%20Index-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-> An identity, credential-lifecycle, ReBAC authorization, and tamper-evident audit control plane for AI agents — hardened across 16 dependency-ordered slices, then made usable as a product (landing page, self-serve trial org, operator dashboard) in slices 17–23. Every slice was verified live against a real Docker stack, not just unit tests.
+> An identity, credential-lifecycle, ReBAC authorization, and tamper-evident audit control plane for AI agents — hardened across 16 dependency-ordered slices, then made usable as a product (landing page, self-serve trial org, operator dashboard) in slices 17–24. Every slice was verified live against a real Docker stack, not just unit tests.
 
 ---
 
@@ -30,7 +30,7 @@ Every claim below reflects code that exists, is tested, and has been verified ag
 - CORS lockdown, Redis-backed rate limiting, worker-duplication fix, pinned images, hardened container (Slice 15)
 - CI, a dashboard with no mock-data fallback, and honest docs (Slice 16)
 
-**Done — the product on top of it (Slices 17–23):**
+**Done — the product on top of it (Slices 17–24):**
 - **Frontend overhaul (17):** a marketing landing page, a real login flow against `/auth/login` + `/auth/me`, client-side routing with an auth guard, and the operator dashboard on Tailwind CSS v4 with a mobile drawer navigation.
 - **White + red console reskin (18):** the dashboard and login moved off the original dark theme onto one light, single-accent console theme.
 - **Self-serve trial org (19):** a visitor can create their own organization and admin account from the landing page — see [Tenant onboarding](#tenant-onboarding-slice-19).
@@ -38,6 +38,7 @@ Every claim below reflects code that exists, is tested, and has been verified ag
 - **Mock MCP server, bindings form, SSRF host allowlist (21):** the pre-execution MCP proxy can now be exercised live end to end, and a real SSRF gap the trial signup would otherwise have widened is closed.
 - **Block reasons (22):** every blocked MCP call is recorded and shown as what it actually was (policy denial, provenance denial, tool filter, missing binding, …) instead of one generic "blocked".
 - **Authenticated `/auth/register` (23):** found while writing this README — the route that adds an operator to an org took no authentication, so anyone who knew an org's UUID could add themselves as one of its operators. It now requires an operator of that org (or a superuser), and a cross-tenant attempt looks exactly like a nonexistent org.
+- **Live sidebar counts (24):** each dashboard tab shows a real, org-scoped count (agents, sub-agents, audit entries, proxied calls), replacing badges that were leftover build-plan labels like "Phase 1-3".
 
 **Honestly not done:**
 - **No real SPIFFE/SPIRE attestation.** `spiffe_id` is a structured, format-checked identifier string (`spiffe://<trust-domain>/ns/<org>/sa/<agent>`) — there is no SPIRE server, no X.509 cert, no cryptographic workload attestation anywhere in this codebase. The actual cryptographic trust boundary is the RS256 JWT issued at token exchange. See `backend/app/core/spiffe.py`'s module docstring for the full explanation.
@@ -171,6 +172,8 @@ React 18 + Vite + Tailwind CSS v4, served on `:5173`. Routes: `/` (landing), `/l
 | **Append-Only Ledger** | The hash-chained audit log, searchable, with per-entry previous/current hashes |
 | **Pre-Execution Proxy** | Every MCP call attempt: allowed, or blocked with its cause and reason |
 
+Each tab in the sidebar carries a live count badge — agents, sub-agents in the delegation tree, audit entries, and proxied calls (hover for the detail, including how many were blocked). They come from `GET /api/v1/overview/counts`, real org-scoped totals (the audit and session list endpoints only return the latest page, so a count taken from them would stall at the page size), refreshed after every data load and every 30 seconds. If a fetch fails the badges disappear rather than show a stale number.
+
 There is **no mock-data fallback**: if the backend is unreachable the dashboard shows an explicit "Backend unreachable" state with a retry — never fabricated agents or audit rows. "Verify Audit Integrity" in the header runs the real chain check.
 
 The Register Agent form's MCP bindings box takes JSON; **Insert demo bindings** fills three bindings against the bundled mock server (a plain data server, an `untrusted_source` web-search server, and a mail server whose `send_email` is tagged `external_send`).
@@ -273,7 +276,7 @@ docker run --rm --network docker_default \
   -w /app/backend docker-backend \
   python -m pytest tests/ -q
 ```
-`SCHEMA_CHECK_DATABASE_URL` matters: `test_schema_sync` defaults to `localhost:5432` and fails inside the container without it. As of Slice 23 that is 116 tests; the Rego policy has its own 23:
+`SCHEMA_CHECK_DATABASE_URL` matters: `test_schema_sync` defaults to `localhost:5432` and fails inside the container without it. As of Slice 24 that is 120 tests; the Rego policy has its own 23:
 ```bash
 docker run --rm -v "$(pwd)/backend/policies:/policies:ro" \
   openpolicyagent/opa:latest-debug@sha256:f37df2fabfe6e3d5f62579b21dbba2c4054738c3e699dac5bf4521b1370494f8 \
@@ -370,6 +373,7 @@ Two more checks worth doing by hand: stop the `opa` container and repeat a tool 
 | `POST` | `/api/v1/token/inspect` | Verify a token's signature and decode its claims | ❌ |
 | `POST` | `/api/v1/mcp/tools/{tool_name}` | Pre-execution ReBAC + provenance-aware proxy | Agent bearer |
 | `GET` | `/api/v1/mcp/sessions` | Every proxied call, with its `policy_decision` and reason | Operator JWT |
+| `GET` | `/api/v1/overview/counts` | Org-scoped totals (agents, sub-agents, audit entries, proxied calls, blocked calls) for the dashboard badges | Operator JWT |
 | `GET` | `/api/v1/audit/logs` / `/api/v1/audit/verify` | The audit log / recompute and verify the SHA-256 hash chain | Operator JWT |
 | `POST` | `/api/v1/oauth/register` | Dynamic Client Registration (RFC 7591) | Operator JWT |
 | `GET` | `/api/v1/oauth/authorize` → `POST /api/v1/oauth/token` | Authorization Code + PKCE (RFC 8707 resource binding) | Operator JWT / PKCE |

@@ -20,7 +20,7 @@ Enforces two guarantees that no other layer should be able to bypass:
 import json
 from typing import Optional, Sequence
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
@@ -242,6 +242,13 @@ class AuditRepository(BaseRepository[AuditLog]):
             query = query.where(AuditLog.action == action)
         result = await db.execute(query)
         return result.scalars().all()
+
+    async def count_for_org(self, db: AsyncSession, org_id: str) -> int:
+        """Total entries in this org's chain. /audit/logs only returns the latest page, so a count can't come from it."""
+        result = await db.execute(
+            select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org_id)
+        )
+        return result.scalar_one()
 
     async def get_latest(
         self, db: AsyncSession, org_id: str, limit: int = 50

@@ -1,12 +1,33 @@
 import React from 'react';
 import { Cpu, GitBranch, ShieldAlert, Terminal, Layers, X } from 'lucide-react';
 
-export default function Sidebar({ activeTab, onTabChange, isOpen, onClose }) {
+const formatCount = (n) => new Intl.NumberFormat('en', { notation: 'compact' }).format(n);
+
+// counts is null until the first successful fetch, and again whenever a
+// fetch fails — a badge is either a real number or absent, never a stale or
+// made-up one (same no-mock rule as the rest of the dashboard).
+export default function Sidebar({ activeTab, onTabChange, isOpen, onClose, counts }) {
   const navItems = [
-    { id: 'agents', label: 'Agent Hierarchy Tree', icon: Cpu, badge: 'Phase 1-3' },
-    { id: 'delegation', label: 'Multi-Hop Delegation', icon: GitBranch, badge: 'ReBAC' },
-    { id: 'audit', label: 'Append-Only Ledger', icon: ShieldAlert, badge: 'SHA256' },
-    { id: 'mcp', label: 'Pre-Execution Proxy', icon: Terminal, badge: 'OPA Deny' },
+    {
+      id: 'agents', label: 'Agent Hierarchy Tree', icon: Cpu,
+      count: counts?.agents,
+      hint: (n) => `${n} agents in this organization`,
+    },
+    {
+      id: 'delegation', label: 'Multi-Hop Delegation', icon: GitBranch,
+      count: counts?.sub_agents,
+      hint: (n) => `${n} sub-agents in the delegation tree`,
+    },
+    {
+      id: 'audit', label: 'Append-Only Ledger', icon: ShieldAlert,
+      count: counts?.audit_entries,
+      hint: (n) => `${n} entries in the audit hash chain`,
+    },
+    {
+      id: 'mcp', label: 'Pre-Execution Proxy', icon: Terminal,
+      count: counts?.mcp_calls,
+      hint: (n) => `${n} proxied tool calls, ${counts.mcp_blocked} blocked before execution`,
+    },
   ];
 
   const content = (
@@ -41,13 +62,17 @@ export default function Sidebar({ activeTab, onTabChange, isOpen, onClose }) {
                   <Icon size={18} className={isActive ? 'text-brand-red' : 'text-text-muted'} />
                   <span>{item.label}</span>
                 </div>
-                <span
-                  className={`text-[0.65rem] px-1.5 py-0.5 rounded font-bold ${
-                    isActive ? 'bg-brand-red text-white' : 'bg-slate-100 text-text-muted'
-                  }`}
-                >
-                  {item.badge}
-                </span>
+                {typeof item.count === 'number' && (
+                  <span
+                    title={item.hint(item.count)}
+                    aria-label={item.hint(item.count)}
+                    className={`text-[0.7rem] px-2 py-0.5 rounded-full font-bold tabular-nums whitespace-nowrap ${
+                      isActive ? 'bg-brand-red/10 text-brand-red' : 'bg-slate-100 text-text-muted'
+                    }`}
+                  >
+                    {formatCount(item.count)}
+                  </span>
+                )}
               </button>
             );
           })}

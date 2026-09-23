@@ -1,7 +1,7 @@
 from typing import Optional, Sequence
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update, and_
+from sqlalchemy import select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent
@@ -47,6 +47,17 @@ class AgentRepository(BaseRepository[Agent]):
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         return result.scalars().all()
+
+    async def count_by_org(self, db: AsyncSession, org_id: str) -> tuple[int, int]:
+        """(all agents, agents that have a parent) for one org, in a single query."""
+        result = await db.execute(
+            select(
+                func.count(),
+                func.count().filter(Agent.parent_agent_id.is_not(None)),
+            ).where(Agent.org_id == org_id)
+        )
+        total, sub_agents = result.one()
+        return total, sub_agents
 
     async def list_by_parent(
         self, db: AsyncSession, parent_agent_id: str

@@ -69,6 +69,10 @@ export const apiService = {
     return data;
   },
 
+  async getOverviewCounts() {
+    return requestJson('/overview/counts', { headers: getHeaders() });
+  },
+
   async getAgents() {
     return requestJson('/agents', { headers: getHeaders() });
   },

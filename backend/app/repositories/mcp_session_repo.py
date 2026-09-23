@@ -1,5 +1,5 @@
 from typing import Optional, Sequence
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mcp_session import McpSession
@@ -9,6 +9,17 @@ from app.repositories.base_repo import BaseRepository
 class McpSessionRepository(BaseRepository[McpSession]):
     def __init__(self):
         super().__init__(McpSession)
+
+    async def count_for_org(self, db: AsyncSession, org_id: str) -> tuple[int, int]:
+        """(all proxied calls, calls blocked before execution) for one org, in a single query."""
+        result = await db.execute(
+            select(
+                func.count(),
+                func.count().filter(McpSession.status == "blocked"),
+            ).where(McpSession.org_id == org_id)
+        )
+        total, blocked = result.one()
+        return total, blocked
 
     async def get_by_trace(
         self, db: AsyncSession, causal_trace_id: str, org_id: str

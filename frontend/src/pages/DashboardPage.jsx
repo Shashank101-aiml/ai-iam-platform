@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [verificationStatus, setVerificationStatus] = useState(null);
   const [operator, setOperator] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [counts, setCounts] = useState(null);
   // No mock fallback (Slice 16) — a failed fetch surfaces here instead
   // of silently rendering fabricated agents/audit rows. This is the
   // one thing an operator using this dashboard must never be misled
@@ -53,6 +54,24 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, [activeTab]);
 
+  // Sidebar badge totals. Cleared on failure rather than left stale, so a
+  // badge is always a real number or absent. fetchDashboardData refreshes
+  // them after every load (which covers register / activate / issue-key /
+  // refresh); this interval keeps them current while the page sits open.
+  const refreshCounts = async () => {
+    try {
+      setCounts(await apiService.getOverviewCounts());
+    } catch (err) {
+      console.error('Failed to load overview counts:', err);
+      setCounts(null);
+    }
+  };
+
+  useEffect(() => {
+    const id = setInterval(refreshCounts, 30000);
+    return () => clearInterval(id);
+  }, []);
+
   const fetchDashboardData = async () => {
     setLoading(true);
     setLoadError(null);
@@ -74,6 +93,7 @@ export default function DashboardPage() {
       setLoadError(err.message || 'Failed to reach the AI-IAM backend.');
     } finally {
       setLoading(false);
+      refreshCounts();
     }
   };
 
@@ -119,6 +139,7 @@ export default function DashboardPage() {
           onTabChange={handleTabChange}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          counts={counts}
         />
 
         <main className="flex-1 p-4 md:p-8 max-w-[1400px] mx-auto w-full">
