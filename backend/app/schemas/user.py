@@ -7,10 +7,12 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserCreate(BaseModel):
+    # No is_superuser: registering a user can never grant platform-wide
+    # superuser (auth_service.create_user doesn't take one either). An
+    # unknown key in the request body is ignored, not honoured.
     org_id: str
     email: EmailStr
     password: str = Field(..., min_length=8)
-    is_superuser: bool = False
 
 
 class UserLogin(BaseModel):
