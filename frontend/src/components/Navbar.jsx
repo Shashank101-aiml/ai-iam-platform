@@ -29,7 +29,7 @@ export default function Navbar({ onVerify, verificationStatus, operator, onLogou
             AI-IAM <span className="text-brand-red font-semibold">PLATFORM</span>
           </h1>
           <span className="hidden sm:block text-[0.7rem] text-text-muted uppercase tracking-[0.08em]">
-            Auth0 for AI Agents • SPIFFE/OPA ReBAC Governed
+            Auth0 for AI Agents
           </span>
         </div>
       </div>
