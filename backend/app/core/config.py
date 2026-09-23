@@ -151,6 +151,20 @@ class Settings(BaseSettings):
     # mint time, not silently issued session-scoped.
     MCP_TASK_SCOPING_REQUIRED_SCOPES: list[str] = ["credential:rotate"]
 
+    # SSRF allowlist for mcp_bindings[].server_url, enforced at agent
+    # registration (agent_service.register). The proxy already refuses to
+    # take a URL from a tool-call request body, but the binding's own
+    # server_url used to be trusted on the grounds that it is
+    # "operator-authored" — an assumption that stopped holding once
+    # POST /auth/trial-signup let anyone become an operator of their own
+    # org: without this check, a visitor could register an agent bound to
+    # http://postgres:5432 or http://opa:8181 and have the proxy POST
+    # /tools/<name> to it from inside the network. Fail-closed default:
+    # only the bundled mock MCP server's hostnames. A real deployment
+    # must set this (env var, JSON list) to the hostnames of the MCP
+    # servers it actually uses.
+    MCP_SERVER_URL_ALLOWED_HOSTS: list[str] = ["mock-mcp", "security-mcp", "data-mcp"]
+
     class Config:
         env_file = ".env"
         case_sensitive = True

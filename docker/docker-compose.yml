@@ -87,6 +87,47 @@ services:
       timeout: 5s
       retries: 5
 
+  # Mock downstream MCP server — LOCAL DEVELOPMENT / DEMO ONLY (see
+  # mock_mcp/server.py). Gives the MCP proxy something real to forward
+  # allowed calls to, and GET /calls to prove blocked calls never reached
+  # it. The aliases are the hostnames the seeded demo agents' mcp_bindings
+  # already point at (scripts/seed_db.py), so those start working without
+  # touching seed data. Same image digest as the backend's base image, and
+  # the same hardening: this process needs no writable filesystem, no
+  # capabilities, and no privilege escalation.
+  mock-mcp:
+    image: python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534
+    container_name: aiiam_mock_mcp
+    restart: always
+    user: "1001:1001"
+    working_dir: /app
+    command: ["python", "/app/server.py"]
+    volumes:
+      - ../mock_mcp:/app:ro
+    ports:
+      # 8090 on the host so `curl localhost:8090/calls` works for
+      # inspection; the backend reaches it as mock-mcp:8080 internally.
+      - "8090:8080"
+    networks:
+      default:
+        aliases:
+          - security-mcp
+          - data-mcp
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   backend:
     build:
       context: ..

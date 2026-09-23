@@ -73,7 +73,7 @@ export const apiService = {
     return requestJson('/agents', { headers: getHeaders() });
   },
 
-  async registerAgent({ name, description, allowedScopes, parentAgentId, maxDelegationDepth }) {
+  async registerAgent({ name, description, allowedScopes, parentAgentId, maxDelegationDepth, mcpBindings }) {
     return requestJson('/agents', {
       method: 'POST',
       headers: getHeaders(),
@@ -83,6 +83,7 @@ export const apiService = {
         allowed_scopes: allowedScopes,
         parent_agent_id: parentAgentId || null,
         max_delegation_depth: maxDelegationDepth,
+        mcp_bindings: mcpBindings || [],
       }),
     });
   },

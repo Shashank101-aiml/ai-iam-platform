@@ -21,16 +21,60 @@ subsequent DB operation fails.
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from app.models.agent import Agent
+from app.core.config import settings
 from app.core.constants import AgentStatus, AuditAction
 from app.core.spiffe import build_spiffe_id, spire_client
 from app.core.revocation import revoke_all_in_index
 from app.repositories.agent_repo import agent_repo
 from app.repositories.audit_repo import audit_repo
+
+
+def validate_mcp_bindings(mcp_bindings: Optional[list[dict]]) -> None:
+    """
+    Reject any binding whose server_url could aim the MCP proxy at an
+    arbitrary internal address (SSRF). Only bindings that carry a
+    server_url are checked — a binding without one already fails cleanly
+    at call time ("has no server_url configured").
+    """
+    allowed = {h.lower() for h in settings.MCP_SERVER_URL_ALLOWED_HOSTS}
+    for binding in (mcp_bindings or []):
+        server_url = binding.get("server_url")
+        if server_url is None:
+            continue
+        server_id = binding.get("server_id", "<unnamed>")
+        try:
+            parsed = urlparse(str(server_url))
+            hostname = (parsed.hostname or "").lower()
+            has_userinfo = parsed.username is not None or parsed.password is not None
+            _ = parsed.port  # raises ValueError on a malformed port
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"mcp_bindings['{server_id}'].server_url is not a valid URL",
+            )
+        if parsed.scheme not in ("http", "https") or not hostname or has_userinfo:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"mcp_bindings['{server_id}'].server_url must be a plain "
+                    "http(s) URL with a host and no embedded credentials"
+                ),
+            )
+        if hostname not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"mcp_bindings['{server_id}'].server_url host '{hostname}' is not in "
+                    "this platform's allowed MCP server hosts "
+                    "(MCP_SERVER_URL_ALLOWED_HOSTS)"
+                ),
+            )
 
 
 class AgentService:
@@ -60,6 +104,8 @@ class AgentService:
         config before any external side-effects happen.
         """
         causal_trace_id = str(uuid.uuid4())
+
+        validate_mcp_bindings(mcp_bindings)
 
         # Validate parent agent exists and belongs to same org
         if parent_agent_id:

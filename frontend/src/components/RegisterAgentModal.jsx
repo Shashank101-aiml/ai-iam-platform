@@ -2,12 +2,43 @@ import React, { useState } from 'react';
 import { Cpu, AlertOctagon, X } from 'lucide-react';
 import { apiService } from '../services/api.js';
 
+// Three bindings against the bundled mock MCP server (docker-compose's
+// mock-mcp service): a plain data server, a web-search server marked as an
+// untrusted source, and a mail server whose send_email is tagged as an
+// external_send capability — enough to exercise tool_filter, OPA's blocked
+// tools, and provenance-aware denial.
+const DEMO_BINDINGS = [
+  { server_id: 'data-mcp', server_url: 'http://mock-mcp:8080', tool_filter: ['query_database'] },
+  { server_id: 'web-mcp', server_url: 'http://mock-mcp:8080', tool_filter: ['search_web'], untrusted_source: true },
+  {
+    server_id: 'mail-mcp',
+    server_url: 'http://mock-mcp:8080',
+    tool_filter: ['send_email'],
+    tool_capabilities: { send_email: ['external_send'] },
+  },
+];
+
+function parseBindings(text) {
+  if (!text.trim()) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('MCP bindings is not valid JSON.');
+  }
+  if (!Array.isArray(parsed) || parsed.some((b) => typeof b !== 'object' || b === null || Array.isArray(b))) {
+    throw new Error('MCP bindings must be a JSON array of objects.');
+  }
+  return parsed;
+}
+
 export default function RegisterAgentModal({ agents, onClose, onRegistered }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [scopesInput, setScopesInput] = useState('tool:execute');
   const [parentAgentId, setParentAgentId] = useState('');
   const [maxDelegationDepth, setMaxDelegationDepth] = useState(3);
+  const [bindingsInput, setBindingsInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -20,12 +51,14 @@ export default function RegisterAgentModal({ agents, onClose, onRegistered }) {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
+      const mcpBindings = parseBindings(bindingsInput);
       await apiService.registerAgent({
         name,
         description,
         allowedScopes,
         parentAgentId: parentAgentId || null,
         maxDelegationDepth: Number(maxDelegationDepth),
+        mcpBindings,
       });
       await onRegistered();
       onClose();
@@ -38,7 +71,7 @@ export default function RegisterAgentModal({ agents, onClose, onRegistered }) {
 
   return (
     <div className="fixed inset-0 bg-bg-deep/85 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="glass-panel w-full max-w-[560px] p-8" style={{ border: '1px solid var(--color-border-accent)' }}>
+      <div className="glass-panel w-full max-w-[560px] max-h-[92vh] overflow-y-auto p-8" style={{ border: '1px solid var(--color-border-accent)' }}>
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-[10px] bg-brand-red/10 border border-border-accent">
@@ -138,6 +171,33 @@ export default function RegisterAgentModal({ agents, onClose, onRegistered }) {
                 className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-sm outline-none focus:border-brand-red"
               />
             </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="mcpBindings" className="block text-sm font-semibold text-slate-700">
+                MCP server bindings <span className="font-normal text-text-muted">(optional, JSON)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setBindingsInput(JSON.stringify(DEMO_BINDINGS, null, 2))}
+                className="text-xs font-semibold text-brand-red hover:underline"
+              >
+                Insert demo bindings
+              </button>
+            </div>
+            <textarea
+              id="mcpBindings"
+              rows={bindingsInput ? 8 : 3}
+              value={bindingsInput}
+              onChange={(e) => setBindingsInput(e.target.value)}
+              placeholder='[{"server_id": "data-mcp", "server_url": "http://mock-mcp:8080"}]'
+              spellCheck={false}
+              className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-xs font-mono outline-none focus:border-brand-red"
+            />
+            <p className="text-xs text-text-muted mt-1">
+              Which MCP servers this agent may reach. Only hosts on the platform's allowlist are accepted.
+            </p>
           </div>
 
           <div className="flex gap-3 justify-end mt-2">
