@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
+import TrialSignupPage from './pages/TrialSignupPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import RequireAuth from './components/RequireAuth.jsx';
 
@@ -10,6 +11,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/trial" element={<TrialSignupPage />} />
       <Route
         path="/dashboard"
         element={

@@ -59,6 +59,16 @@ export const apiService = {
     return data;
   },
 
+  async trialSignup(orgName, email, password) {
+    const data = await requestJson('/auth/trial-signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_name: orgName, admin_email: email, admin_password: password }),
+    });
+    localStorage.setItem('aiiam_operator_token', data.access_token);
+    return data;
+  },
+
   async getAgents() {
     return requestJson('/agents', { headers: getHeaders() });
   },

@@ -66,6 +66,10 @@ export default function Hero() {
             View Architecture
           </a>
         </div>
+
+        <Link to="/trial" className="inline-block mt-6 text-sm font-medium" style={{ color: '#7dd3fc' }}>
+          Start your free trial org →
+        </Link>
       </div>
     </section>
   );

@@ -69,3 +69,9 @@ async def rate_limit_token_exchange(request: Request) -> None:
     await enforce_rate_limit(
         request, bucket="token_exchange", limit=settings.RATE_LIMIT_TOKEN_EXCHANGE_PER_MINUTE
     )
+
+
+async def rate_limit_trial_signup(request: Request) -> None:
+    await enforce_rate_limit(
+        request, bucket="trial_signup", limit=settings.RATE_LIMIT_TRIAL_SIGNUP_PER_MINUTE
+    )

@@ -46,6 +46,9 @@ class AuditAction(str, Enum):
     ON_BEHALF_OF_GRANTED = "on_behalf_of.granted"
     ON_BEHALF_OF_REVOKED = "on_behalf_of.revoked"
 
+    # Tenant lifecycle
+    ORGANIZATION_CREATED = "organization.created"
+
 
 class PermissionScope(str, Enum):
     """Scopes embedded in agent JWTs — fine-grained, not roles."""

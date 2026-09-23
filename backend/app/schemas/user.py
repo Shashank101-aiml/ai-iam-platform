@@ -18,6 +18,16 @@ class UserLogin(BaseModel):
     password: str
 
 
+class TrialSignupRequest(BaseModel):
+    """Public, unauthenticated self-serve signup — creates a brand new
+    Organization and its first (non-superuser) admin User together.
+    See auth.py's /trial-signup route for why this needs to exist
+    separately from the superuser-only POST /organizations."""
+    org_name: str = Field(..., min_length=2, max_length=255)
+    admin_email: EmailStr
+    admin_password: str = Field(..., min_length=8)
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     # request.
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 10
     RATE_LIMIT_TOKEN_EXCHANGE_PER_MINUTE: int = 60
+    # Tighter than login: this does a DB write (new org + new user) plus
+    # a bcrypt hash on completely unauthenticated input, not just a read.
+    RATE_LIMIT_TRIAL_SIGNUP_PER_MINUTE: int = 3
 
     # Task-scoped tokens (Slice 12) — Stacklok's "ambient authority"
     # problem: a bearer token today authorizes ANY tool call its scopes

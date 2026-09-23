@@ -1,26 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, AlertOctagon, LogIn } from 'lucide-react';
+import { ShieldCheck, AlertOctagon, ArrowRight } from 'lucide-react';
 import { apiService } from '../services/api.js';
 
 const TOKEN_KEY = 'aiiam_operator_token';
 
-export default function LoginPage() {
+export default function TrialSignupPage() {
   const navigate = useNavigate();
+  const [orgName, setOrgName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Login/landing share the light marketing surface; the dashboard
-  // keeps the original dark gradient body — toggled via a class rather
-  // than duplicating index.css's body rule per-page.
   useEffect(() => {
     document.body.classList.add('on-light-surface');
     return () => document.body.classList.remove('on-light-surface');
   }, []);
 
-  // Already logged in? Don't show the login form again.
   useEffect(() => {
     if (localStorage.getItem(TOKEN_KEY)) {
       navigate('/dashboard', { replace: true });
@@ -29,23 +27,27 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setLoading(true);
     try {
-      await apiService.login(email, password);
+      await apiService.trialSignup(orgName, email, password);
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed.');
+      setError(err.message || 'Signup failed.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <Link to="/" className="flex items-center justify-center gap-2 mb-8">
-          <div className="bg-gradient-to-br from-cyan-glow to-sapphire p-2 rounded-[10px] shadow-[0_0_16px_rgba(0,245,255,0.4)]">
+          <div className="bg-gradient-to-br from-cyan-glow to-sapphire p-2 rounded-[10px] shadow-[0_0_16px_rgba(200,16,46,0.3)]">
             <ShieldCheck size={22} className="text-bg-deep" strokeWidth={2.5} />
           </div>
           <span className="font-outfit text-lg font-bold text-ink-900">
@@ -54,9 +56,9 @@ export default function LoginPage() {
         </Link>
 
         <div className="glass-panel p-8">
-          <h1 className="font-outfit text-2xl font-bold text-ink-900 mb-1">Operator sign-in</h1>
+          <h1 className="font-outfit text-2xl font-bold text-ink-900 mb-1">Start your trial organization</h1>
           <p className="text-sm text-text-muted mb-6">
-            Sign in to manage agents, delegation chains, and the audit ledger.
+            Creates a brand new, empty organization and your own admin account — no seeded demo data, no one else's agents.
           </p>
 
           {error && (
@@ -68,8 +70,23 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
+              <label htmlFor="orgName" className="block text-sm font-semibold text-slate-700 mb-1.5">
+                Organization name
+              </label>
+              <input
+                id="orgName"
+                type="text"
+                required
+                minLength={2}
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                placeholder="Acme Corp"
+                className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-sm outline-none focus:border-brand-red"
+              />
+            </div>
+            <div>
               <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-1.5">
-                Email
+                Work email
               </label>
               <input
                 id="email"
@@ -78,7 +95,7 @@ export default function LoginPage() {
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@acmecorp.ai"
+                placeholder="you@company.com"
                 className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-sm outline-none focus:border-brand-red"
               />
             </div>
@@ -90,9 +107,25 @@ export default function LoginPage() {
                 id="password"
                 type="password"
                 required
-                autoComplete="current-password"
+                minLength={8}
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-sm outline-none focus:border-brand-red"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-semibold text-slate-700 mb-1.5">
+                Confirm password
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                required
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full p-3 rounded-lg bg-surface-100 border border-slate-200 text-ink-900 text-sm outline-none focus:border-brand-red"
               />
@@ -103,17 +136,14 @@ export default function LoginPage() {
               disabled={loading}
               className="btn-primary flex items-center justify-center gap-2 mt-2"
             >
-              <LogIn size={16} />
-              <span>{loading ? 'Signing in…' : 'Sign in'}</span>
+              <span>{loading ? 'Creating your org…' : 'Create trial organization'}</span>
+              <ArrowRight size={16} />
             </button>
           </form>
         </div>
 
         <p className="text-center text-sm text-ink-600 mt-6">
-          <Link to="/" className="text-brand-600 hover:underline">← Back to overview</Link>
-        </p>
-        <p className="text-center text-sm text-ink-600 mt-2">
-          New here? <Link to="/trial" className="text-brand-red hover:underline">Start a trial organization →</Link>
+          Already have an account? <Link to="/login" className="text-brand-red hover:underline">Sign in</Link>
         </p>
       </div>
     </div>
