@@ -50,7 +50,11 @@ class McpSessionRepository(BaseRepository[McpSession]):
             select(McpSession)
             .where(
                 McpSession.org_id == org_id,
-                McpSession.policy_decision == "blocked",
+                # status, not policy_decision: policy_decision now names the
+                # KIND of block (policy_denied, tool_filter_denied, ...), and
+                # older rows still carry the generic "blocked" — status is
+                # "blocked" for every one of them.
+                McpSession.status == "blocked",
             )
             .order_by(McpSession.created_at.desc())
             .limit(limit)

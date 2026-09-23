@@ -68,6 +68,23 @@ is_tainted_high_risk_call if {
 	capability in tainted_denied_capabilities
 }
 
+# WHY a request was denied — informational only. `allow` above remains the
+# single enforcement point; nothing consumes deny_reasons to grant access,
+# and a request is allowed exactly when it is empty (see the consistency
+# tests in authz_test.rego). check_permission reads it from the same
+# package-root query that returns `allow`, so the audit log and the
+# dashboard can say "provenance" or "always-blocked tool" instead of a
+# bare "denied". More than one can apply to the same request.
+deny_reasons contains "malformed_input" if not well_formed_input
+
+deny_reasons contains "scope_not_granted" if not input.action in input.token_scopes
+
+deny_reasons contains "delegation_depth_exceeded" if input.delegation_depth > max_delegation_depth
+
+deny_reasons contains "blocked_tool" if is_blocked_tool_call
+
+deny_reasons contains "provenance_tainted_high_risk_capability" if is_tainted_high_risk_call
+
 # Baseline input sanity — not a real cross-org check (nothing in this
 # input shape names a second org to match against), but refusing to
 # allow a request that doesn't even identify its agent/org is cheap

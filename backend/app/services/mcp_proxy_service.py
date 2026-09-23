@@ -52,7 +52,12 @@ from app.core.config import settings
 from app.core.metrics import MCP_TOOL_DENIALS_TOTAL
 from app.models.mcp_session import McpSession
 from app.core.constants import AuditAction
-from app.core.permissions import check_permission, PermissionDeniedError
+from app.core.permissions import (
+    check_permission,
+    PermissionDeniedError,
+    REASON_PROVENANCE,
+    REASON_POLICY_UNAVAILABLE,
+)
 from app.repositories.audit_repo import audit_repo
 from app.repositories.agent_repo import agent_repo
 from app.repositories.mcp_session_repo import mcp_session_repo
@@ -65,6 +70,55 @@ class _ResolvedBinding(NamedTuple):
     untrusted_source: bool
     tool_capabilities: dict[str, list[str]]
     error: Optional[str]
+
+
+# Human-readable text for authz.rego's deny_reasons codes. Presentation
+# only — the decision itself was already made by OPA.
+_DENY_REASON_TEXT = {
+    "scope_not_granted": "the token does not carry the tool:execute scope",
+    "blocked_tool": "the tool is on the policy's always-blocked list",
+    "delegation_depth_exceeded": "the delegation depth exceeds the policy ceiling",
+    "malformed_input": "the request did not identify its agent and org",
+}
+
+
+def _classify_policy_denial(
+    err: PermissionDeniedError, tool_name: str, capabilities: list[str]
+) -> tuple[str, str]:
+    """
+    Turn an OPA denial into (policy_decision, reason).
+
+    policy_decision is what the dashboard, the audit trail and the
+    aiiam_mcp_tool_denials_total metric group by, so each distinct cause
+    gets its own value rather than one catch-all: a provenance denial (an
+    earlier call in this trace retrieved untrusted content) and an OPA
+    outage that failed closed are both operationally very different from
+    an ordinary scope/blocked-tool denial.
+    """
+    base = str(err)
+    reasons = err.reasons
+
+    if REASON_POLICY_UNAVAILABLE in reasons:
+        return "policy_unavailable", f"{base} — the policy engine could not be reached, so the call failed closed"
+
+    if reasons == [REASON_PROVENANCE]:
+        caps = ", ".join(capabilities) if capabilities else "a high-risk capability"
+        return (
+            "provenance_denied",
+            f"{base} — provenance: an earlier call in this trace retrieved untrusted content, "
+            f"and '{tool_name}' is tagged {caps}",
+        )
+
+    if reasons:
+        parts = []
+        for code in reasons:
+            if code == REASON_PROVENANCE:
+                parts.append("an earlier call in this trace retrieved untrusted content and this tool is high-risk")
+            else:
+                parts.append(_DENY_REASON_TEXT.get(code, code))
+        return "policy_denied", f"{base} — {'; '.join(parts)}"
+
+    return "policy_denied", base
 
 
 def _hash_payload(data: Any) -> str:
@@ -191,6 +245,7 @@ class McpProxyService:
                 causal_trace_id=causal_trace_id,
                 reason=binding.error,
                 source_ip=source_ip,
+                policy_decision="binding_denied",
             )
             raise HTTPException(
                 status_code=403,
@@ -230,6 +285,7 @@ class McpProxyService:
                 causal_trace_id=causal_trace_id,
                 reason=reason,
                 source_ip=source_ip,
+                policy_decision="resource_denied",
             )
             raise HTTPException(
                 status_code=403,
@@ -315,6 +371,7 @@ class McpProxyService:
                 provenance_tainted=provenance_tainted,
             )
         except PermissionDeniedError as e:
+            policy_decision, reason = _classify_policy_denial(e, tool_name, capabilities)
             await self._block(
                 db,
                 session_id=session_id,
@@ -326,15 +383,16 @@ class McpProxyService:
                 args_hash=args_hash,
                 args_metadata=args_metadata,
                 causal_trace_id=causal_trace_id,
-                reason=str(e),
+                reason=reason,
                 source_ip=source_ip,
+                policy_decision=policy_decision,
             )
             raise HTTPException(
                 status_code=403,
                 detail={
                     "error": "tool_call_blocked",
                     "tool": tool_name,
-                    "reason": str(e),
+                    "reason": reason,
                     "session_id": session_id,
                 },
             )
@@ -356,6 +414,7 @@ class McpProxyService:
                 causal_trace_id=causal_trace_id,
                 reason=reason,
                 source_ip=source_ip,
+                policy_decision="tool_filter_denied",
             )
             raise HTTPException(
                 status_code=403,
@@ -568,15 +627,20 @@ class McpProxyService:
         causal_trace_id: str,
         reason: str,
         source_ip: Optional[str],
-        policy_decision: str = "blocked",
+        policy_decision: str,
     ) -> None:
         """
         Record + audit a blocked call and commit immediately (see module
-        docstring point 7). policy_decision defaults to the generic
-        "blocked" value every earlier denial reason uses; callers pass a
-        more specific value (e.g. "task_scope_denied") when the denial
-        is a genuinely distinct failure mode worth being able to query/
-        meter separately from an ordinary policy/tool_filter block.
+        docstring point 7).
+
+        policy_decision is required, not defaulted: it is what the
+        dashboard labels the block with and what
+        aiiam_mcp_tool_denials_total groups by, so every caller must say
+        WHICH kind of denial this is — "policy_denied", "provenance_denied",
+        "policy_unavailable", "tool_filter_denied", "binding_denied",
+        "resource_denied" or "task_scope_denied". (Rows written before this
+        distinction existed carry the old catch-all "blocked"; readers
+        should treat any unknown value as a generic block.)
         """
         MCP_TOOL_DENIALS_TOTAL.labels(policy_decision=policy_decision).inc()
         await self._record_session(
@@ -592,7 +656,10 @@ class McpProxyService:
             result_hash=None,
             status="blocked",
             policy_decision=policy_decision,
-            blocking_reason=reason,
+            # The column is String(255); a longer reason would raise on
+            # insert and lose the very record of the block. The full text
+            # still goes into the audit entry's details below.
+            blocking_reason=reason[:255],
             duration_ms=0,
             causal_trace_id=causal_trace_id,
         )

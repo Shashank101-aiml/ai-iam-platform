@@ -1,6 +1,23 @@
 import React from 'react';
 import { ShieldX, ShieldCheck, Hash, Clock, RefreshCw } from 'lucide-react';
 
+// One label per kind of block (McpSession.policy_decision — see
+// mcp_proxy_service._block). Not every block is an OPA denial: a tool_filter
+// block never reaches OPA, and a provenance denial is a different failure
+// from a missing scope. Rows written before this distinction existed carry
+// the generic "blocked", and any unknown value falls back to the same.
+const BLOCK_LABELS = {
+  policy_denied: 'OPA POLICY DENIED',
+  provenance_denied: 'PROVENANCE DENIED',
+  policy_unavailable: 'POLICY ENGINE UNAVAILABLE',
+  tool_filter_denied: 'TOOL FILTER BLOCKED',
+  binding_denied: 'NO MCP BINDING',
+  resource_denied: 'RESOURCE MISMATCH',
+  task_scope_denied: 'TASK SCOPE DENIED',
+};
+
+const blockLabel = (decision) => BLOCK_LABELS[decision] || 'BLOCKED';
+
 export default function McpProxyLog({ sessions, onRefresh }) {
   return (
     <div>
@@ -52,7 +69,7 @@ export default function McpProxyLog({ sessions, onRefresh }) {
                         border: `1px solid ${isAllowed ? '#a7f3d0' : '#fecdd3'}`,
                       }}
                     >
-                      {isAllowed ? 'OPA REBAC ALLOWED' : 'OPA REBAC BLOCKED (HTTP 403)'}
+                      {isAllowed ? 'OPA REBAC ALLOWED' : `${blockLabel(sess.policy_decision)} (HTTP 403)`}
                     </span>
                   </div>
 

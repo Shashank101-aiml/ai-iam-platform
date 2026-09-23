@@ -42,7 +42,10 @@ class McpSession(Base, TimestampMixin):
     duration_ms = Column(Integer, nullable=True)  # How long did the tool take?
 
     # Was this call allowed or blocked by policy?
-    policy_decision = Column(String(50), nullable=False)  # "allowed", "blocked"
+    # "allowed", or the kind of block: "policy_denied", "provenance_denied",
+    # "policy_unavailable", "tool_filter_denied", "binding_denied",
+    # "resource_denied", "task_scope_denied" (legacy rows: "blocked")
+    policy_decision = Column(String(50), nullable=False)
     blocking_reason = Column(String(255), nullable=True)
 
     # Provenance tainting (Slice 13): did THIS call's result come from a

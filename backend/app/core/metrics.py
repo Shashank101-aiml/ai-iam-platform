@@ -15,9 +15,10 @@ recomputed from logs after the fact.
 from prometheus_client import Counter, Histogram
 
 # Labeled by the SAME policy_decision values already recorded on
-# McpSession rows ("blocked", "task_scope_denied", ...) — see
-# mcp_proxy_service._block — so this metric and that column always agree
-# on taxonomy instead of drifting into two different vocabularies.
+# McpSession rows ("policy_denied", "provenance_denied", "tool_filter_denied",
+# "task_scope_denied", ...) — see mcp_proxy_service._block — so this metric
+# and that column always agree on taxonomy instead of drifting into two
+# different vocabularies.
 MCP_TOOL_DENIALS_TOTAL = Counter(
     "aiiam_mcp_tool_denials_total",
     "MCP tool calls blocked before execution, by policy_decision reason.",

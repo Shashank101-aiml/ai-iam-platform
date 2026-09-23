@@ -46,6 +46,14 @@ async def verify_opa_reachable() -> None:
         ) from e
 
 
+# Reason codes (authz.rego's deny_reasons) the proxy treats specially. The
+# rest are passed through by name; only these two change what a denial IS,
+# not just how it reads.
+REASON_PROVENANCE = "provenance_tainted_high_risk_capability"
+# Not from OPA — raised here when the policy engine couldn't be asked at all.
+REASON_POLICY_UNAVAILABLE = "policy_engine_unavailable"
+
+
 class PermissionDeniedError(Exception):
     """
     Raised when OPA denies an access request.
@@ -54,11 +62,23 @@ class PermissionDeniedError(Exception):
     message (as tests do, and as ad-hoc denials elsewhere might) without
     fabricating placeholder agent/action/resource values just to satisfy
     a three-argument constructor.
+
+    reasons is why it was denied — OPA's deny_reasons, or
+    REASON_POLICY_UNAVAILABLE when the engine was unreachable and the call
+    failed closed. Empty when unknown; callers must not treat empty as
+    "allowed", only as "no explanation available".
     """
-    def __init__(self, agent_id: str, action: Optional[str] = None, resource: Optional[str] = None):
+    def __init__(
+        self,
+        agent_id: str,
+        action: Optional[str] = None,
+        resource: Optional[str] = None,
+        reasons: Optional[list[str]] = None,
+    ):
         self.agent_id = agent_id
         self.action = action
         self.resource = resource
+        self.reasons = list(reasons or [])
         if action is not None and resource is not None:
             message = f"Agent '{agent_id}' denied '{action}' on '{resource}'"
         else:
@@ -137,18 +157,24 @@ async def check_permission(
     except httpx.TimeoutException:
         # Fail CLOSED on OPA timeout — never default to allow
         raise PermissionDeniedError(
-            agent_id, action, resource_id or resource_type
+            agent_id, action, resource_id or resource_type,
+            reasons=[REASON_POLICY_UNAVAILABLE],
         )
     except httpx.HTTPError:
         raise PermissionDeniedError(
-            agent_id, action, resource_id or resource_type
+            agent_id, action, resource_id or resource_type,
+            reasons=[REASON_POLICY_UNAVAILABLE],
         )
 
-    # OPA returns {"result": {"allow": true/false}}
-    allowed = result.get("result", {}).get("allow", False)
+    # OPA returns {"result": {"allow": true/false, "deny_reasons": [...]}}
+    opa_result = result.get("result", {})
+    allowed = opa_result.get("allow", False)
 
     if not allowed:
-        raise PermissionDeniedError(agent_id, action, resource_id or resource_type)
+        raise PermissionDeniedError(
+            agent_id, action, resource_id or resource_type,
+            reasons=opa_result.get("deny_reasons") or [],
+        )
 
     return True
 

@@ -97,3 +97,50 @@ test_allow_when_neither_capabilities_nor_provenance_given if {
 	# all (matches every pre-Slice-13 input) must be unaffected.
 	authz.allow with input as base_input
 }
+
+# ── deny_reasons: informational, must agree with `allow` ─────────────
+
+test_no_deny_reasons_when_allowed if {
+	authz.deny_reasons == set() with input as base_input
+}
+
+test_reason_provenance_is_the_only_reason_for_a_tainted_external_send if {
+	authz.deny_reasons == {"provenance_tainted_high_risk_capability"} with input as object.union(base_input, {
+		"capabilities": ["external_send"],
+		"provenance": {"tainted": true},
+	})
+}
+
+test_reason_scope_not_granted if {
+	authz.deny_reasons == {"scope_not_granted"} with input as object.union(base_input, {"token_scopes": ["audit:read"]})
+}
+
+test_reason_blocked_tool if {
+	authz.deny_reasons == {"blocked_tool"} with input as object.union(base_input, {"resource": {"type": "mcp_tool", "id": "delete_database"}})
+}
+
+test_reason_delegation_depth_exceeded if {
+	authz.deny_reasons == {"delegation_depth_exceeded"} with input as object.union(base_input, {"delegation_depth": 6})
+}
+
+test_reason_malformed_input_on_empty_input if {
+	"malformed_input" in authz.deny_reasons with input as {}
+}
+
+test_multiple_reasons_are_all_reported if {
+	authz.deny_reasons == {"scope_not_granted", "provenance_tainted_high_risk_capability"} with input as object.union(base_input, {
+		"token_scopes": ["audit:read"],
+		"capabilities": ["external_send"],
+		"provenance": {"tainted": true},
+	})
+}
+
+test_allow_and_deny_reasons_never_disagree if {
+	# Every scenario above that denies must carry at least one reason, and
+	# every one that allows must carry none.
+	denied := object.union(base_input, {"token_scopes": ["audit:read"]})
+	not authz.allow with input as denied
+	count(authz.deny_reasons) > 0 with input as denied
+	authz.allow with input as base_input
+	count(authz.deny_reasons) == 0 with input as base_input
+}
