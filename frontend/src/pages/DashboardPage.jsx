@@ -6,6 +6,7 @@ import Sidebar from '../components/Sidebar.jsx';
 import AgentHierarchyTree from '../components/AgentHierarchyTree.jsx';
 import AuditLogTable from '../components/AuditLogTable.jsx';
 import ApiKeyModal from '../components/ApiKeyModal.jsx';
+import RegisterAgentModal from '../components/RegisterAgentModal.jsx';
 import DelegationChainViewer from '../components/DelegationChainViewer.jsx';
 import McpProxyLog from '../components/McpProxyLog.jsx';
 import { apiService } from '../services/api.js';
@@ -21,6 +22,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [selectedAgentForModal, setSelectedAgentForModal] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState(null);
   const [operator, setOperator] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -150,6 +152,7 @@ export default function DashboardPage() {
                   agents={agents}
                   onRefresh={fetchDashboardData}
                   onOpenKeyModal={handleOpenKeyModal}
+                  onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
                 />
               )}
 
@@ -173,6 +176,14 @@ export default function DashboardPage() {
         <ApiKeyModal
           agent={selectedAgentForModal}
           onClose={() => setIsModalOpen(false)}
+        />
+      )}
+
+      {isRegisterModalOpen && (
+        <RegisterAgentModal
+          agents={agents}
+          onClose={() => setIsRegisterModalOpen(false)}
+          onRegistered={fetchDashboardData}
         />
       )}
     </div>

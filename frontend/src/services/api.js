@@ -73,6 +73,20 @@ export const apiService = {
     return requestJson('/agents', { headers: getHeaders() });
   },
 
+  async registerAgent({ name, description, allowedScopes, parentAgentId, maxDelegationDepth }) {
+    return requestJson('/agents', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        name,
+        description: description || null,
+        allowed_scopes: allowedScopes,
+        parent_agent_id: parentAgentId || null,
+        max_delegation_depth: maxDelegationDepth,
+      }),
+    });
+  },
+
   async activateAgent(agentId) {
     return requestJson(`/agents/${agentId}/activate`, {
       method: 'POST',

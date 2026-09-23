@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Cpu, Key, Shield, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import { Cpu, Key, Shield, CheckCircle, Clock, RefreshCw, Plus } from 'lucide-react';
 import { apiService } from '../services/api.js';
 
-export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }) {
+export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal, onOpenRegisterModal }) {
   const [activatingId, setActivatingId] = useState(null);
 
   const handleActivate = async (agentId) => {
@@ -28,11 +28,26 @@ export default function AgentHierarchyTree({ agents, onRefresh, onOpenKeyModal }
             Two-Phase Workload Identity Lifecycle (`PENDING` → `ACTIVE`) with Zero-Downtime Key Rotation
           </p>
         </div>
-        <button onClick={onRefresh} className="btn-secondary flex items-center gap-2 self-start">
-          <RefreshCw size={16} className="text-brand-red" />
-          <span>Refresh Cluster State</span>
-        </button>
+        <div className="flex gap-3 self-start">
+          <button onClick={onRefresh} className="btn-secondary flex items-center gap-2">
+            <RefreshCw size={16} className="text-brand-red" />
+            <span>Refresh Cluster State</span>
+          </button>
+          <button onClick={onOpenRegisterModal} className="btn-primary flex items-center gap-2">
+            <Plus size={16} />
+            <span>Register New Agent</span>
+          </button>
+        </div>
       </div>
+
+      {agents.length === 0 && (
+        <div className="glass-panel p-10 text-center mb-6">
+          <Cpu size={32} className="text-slate-300 mx-auto mb-3" />
+          <p className="text-slate-600 text-sm">
+            No agents registered yet in this organization. Click "Register New Agent" to create your first one.
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
         {agents.map((agent) => {
