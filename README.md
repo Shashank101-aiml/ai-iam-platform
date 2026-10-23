@@ -1,4 +1,4 @@
-# AI-IAM Platform (Auth0 for Autonomous AI Agents)
+# AI-IAM Platform: an identity, delegation, and pre-execution authorization control plane for AI agents
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
