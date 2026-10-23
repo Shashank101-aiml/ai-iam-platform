@@ -4,7 +4,6 @@ Verifies cryptographic sequence linking (`previous_hash`) and tamper detection a
 """
 
 import pytest
-from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.models.organization import Organization
@@ -68,7 +67,7 @@ async def test_tamper_detection_alerts_on_broken_chain(
         causal_trace_id="trace-002",
         outcome="success",
     )
-    ev2 = await audit_repo.append(
+    await audit_repo.append(
         org_id=test_org.id,
         action=AuditAction.CREDENTIAL_ROTATED,
         actor_type="user",

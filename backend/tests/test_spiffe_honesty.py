@@ -29,7 +29,7 @@ async def test_validate_svid_rejects_malformed_id():
 
 @pytest.mark.asyncio
 async def test_validate_svid_rejects_a_different_trust_domain():
-    forged = f"spiffe://attacker.example/ns/acme-corp/sa/agt-123"
+    forged = "spiffe://attacker.example/ns/acme-corp/sa/agt-123"
     assert await spire_client.validate_svid(forged) is False
 
 

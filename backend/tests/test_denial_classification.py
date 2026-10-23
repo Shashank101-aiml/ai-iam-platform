@@ -136,9 +136,15 @@ async def test_provenance_denial_is_recorded_and_explained(
     await _prepare(db_session, test_agent)
     trace = f"cls-provenance-{uuid.uuid4()}"
     with patch.object(mcp_proxy_service, "_call_mcp_server", return_value=({"ok": True}, None)):
-        await _call(db_session, test_org, test_agent, server="web-mcp", tool="search_web", scopes=["tool:execute"], trace_id=trace)
+        await _call(
+            db_session, test_org, test_agent,
+            server="web-mcp", tool="search_web", scopes=["tool:execute"], trace_id=trace,
+        )
         with pytest.raises(HTTPException) as exc:
-            await _call(db_session, test_org, test_agent, server="comms-mcp", tool="send_email", scopes=["tool:execute"], trace_id=trace)
+            await _call(
+                db_session, test_org, test_agent,
+                server="comms-mcp", tool="send_email", scopes=["tool:execute"], trace_id=trace,
+            )
 
     row = await _blocked_row(db_session, trace)
     assert row.policy_decision == "provenance_denied"
@@ -160,7 +166,10 @@ async def test_missing_scope_and_blocked_tool_are_policy_denied_with_specific_re
 
     t2 = f"cls-blocked-tool-{uuid.uuid4()}"
     with pytest.raises(HTTPException):
-        await _call(db_session, test_org, test_agent, server="srv-1", tool="delete_database", scopes=["tool:execute"], trace_id=t2)
+        await _call(
+            db_session, test_org, test_agent,
+            server="srv-1", tool="delete_database", scopes=["tool:execute"], trace_id=t2,
+        )
     row = await _blocked_row(db_session, t2)
     assert row.policy_decision == "policy_denied" and "always-blocked" in row.blocking_reason
 
@@ -198,7 +207,10 @@ async def test_unreachable_opa_fails_closed_and_says_so(
     trace = f"cls-unavailable-{uuid.uuid4()}"
     with patch("app.core.permissions.settings.OPA_URL", "http://127.0.0.1:1"):
         with pytest.raises(HTTPException) as exc:
-            await _call(db_session, test_org, test_agent, server="srv-1", tool="search_web", scopes=["tool:execute"], trace_id=trace)
+            await _call(
+                db_session, test_org, test_agent,
+                server="srv-1", tool="search_web", scopes=["tool:execute"], trace_id=trace,
+            )
     assert exc.value.status_code == 403  # still denied, never allowed by default
     row = await _blocked_row(db_session, trace)
     assert row.policy_decision == "policy_unavailable"

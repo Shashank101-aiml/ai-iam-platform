@@ -121,7 +121,10 @@ async def test_external_send_allowed_in_a_parallel_trace_with_no_untrusted_read(
 async def test_taint_does_not_block_a_non_high_risk_capability(
     db_session: AsyncSession, test_org: Organization, test_agent: Agent,
 ):
-    """A tainted trace only denies the SPECIFIC capabilities the policy names — an untagged call after an untrusted read is unaffected."""
+    """
+    A tainted trace only denies the SPECIFIC capabilities the policy names —
+    an untagged call after an untrusted read is unaffected.
+    """
     await _set_bindings(db_session, test_agent, PROVENANCE_BINDINGS)
     trace_id = f"provenance-tainted-harmless-{uuid.uuid4()}"
 
